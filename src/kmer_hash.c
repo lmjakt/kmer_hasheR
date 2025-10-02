@@ -14,8 +14,10 @@
 #define OPT_KMER 0
 #define OPT_POS 1
 #define OPT_PAIRS 2
-#define N_OPTS 3
-const uint32_t flags[N_OPTS] = {1, 2, 4};
+#define OPT_COUNT 3
+#define N_OPTS 4
+const uint32_t flags[N_OPTS] = {1, 2, 4, 8};
+static const char* kmer_pos_fields[N_OPTS] = {"kmer", "pos", "pair.pos", "count"};
 
 // Used to translate offsets to sequences.
 const char NUC[4] = {'A', 'C', 'T', 'G'};
@@ -37,7 +39,7 @@ typedef struct {
   kvec_t(int) v;
   uint64_t kmer;
   uint64_t kmer_flag;
-  kvec_t(unsigned char) pos_flag;
+  //  kvec_t(unsigned char) pos_flag; // usage not yet implemented.
 } kmer_pos_t;
 KHASH_MAP_INIT_INT64(kmer_h, kmer_pos_t);
 
@@ -52,7 +54,7 @@ void clear_kmer_h(khash_t(kmer_h) *hash){
   for(k = kh_begin(hash); k != kh_end(hash); ++k){
     if(kh_exist(hash, k)){
 	kv_destroy( kh_val(hash, k).v );
-	kv_destroy( kh_val(hash, k).pos_flag );
+	//	kv_destroy( kh_val(hash, k).pos_flag );
 	kh_del( kmer_h, hash, k );
     }
   } 
@@ -66,6 +68,16 @@ typedef struct {
   size_t kmer_count;
   int sorted;
 } khash_ptr;
+
+
+/// utility function;
+SEXP mk_strsxp(const char **words, size_t n){
+  SEXP words_r = PROTECT(allocVector(STRSXP, n));
+  for(size_t i=0; i < n; ++i)
+    SET_STRING_ELT(words_r, i, mkChar(words[i]));
+  UNPROTECT(1);
+  return(words_r);
+}
 
 // We need a finalise function to clear resources
 // when the external pointer goes out of scope
@@ -321,6 +333,7 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
   uint32_t opt_flag = asInteger(opt_flag_r);
   // returning the kmer sequences is expensive;
   SEXP ret_data = PROTECT(allocVector(VECSXP, N_OPTS));
+  setAttrib( ret_data, R_NamesSymbol, mk_strsxp(kmer_pos_fields, N_OPTS) );
 
   // we define both kmer_pos and kmer_pair_pos
   // even if we are not going to fill them. 
@@ -334,6 +347,11 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
   // only defined where pos_1 and pos_2 are different
   kvec_t(int) kmer_pair_pos;
   kv_init(kmer_pair_pos);
+
+  // the number of occurences of each kmer; to obtain these in `R` would
+  // require a tapply across the positions table; which can be slow.
+  kvec_t(int) kmer_counts;
+  kv_init(kmer_counts);
   
   khiter_t k_it;
   khash_t(kmer_h) *hash = h_ptr->hash;
@@ -341,7 +359,6 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
   char *buffer = malloc(k + 1);
   buffer[k] = 0;
   size_t hash_n = kh_size(hash);
-  //  SEXP ret_data = PROTECT(allocVector(VECSXP, 2));
   SEXP kmers_r = R_NilValue;
   if(opt_flag & flags[OPT_KMER]){
     SET_VECTOR_ELT( ret_data, 0, allocVector(STRSXP, hash_n));
@@ -357,7 +374,11 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
 	kmer_seq(buffer, k, kv.kmer);
 	SET_STRING_ELT(kmers_r, i, mkChar(buffer));
       }
+      if(opt_flag & flags[OPT_COUNT])
+	kv_push(int, kmer_counts, kv.v.n);
       ++i;
+      if(opt_flag & (flags[OPT_POS] | flags[OPT_PAIRS]) == 0)
+	continue;
       for(int j=0; j < kv.v.n; ++j){
 	if(opt_flag & flags[OPT_POS]){
 	  kv_push(int, kmer_pos, i);
@@ -387,9 +408,14 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
     pair_pos = INTEGER(VECTOR_ELT(ret_data, OPT_PAIRS));
     memcpy(pair_pos, kmer_pair_pos.a, kmer_pair_pos.n * sizeof(int));
   }
+  if(opt_flag & flags[OPT_COUNT]){
+    SET_VECTOR_ELT(ret_data, OPT_COUNT, allocVector(INTSXP, kmer_counts.n));
+    memcpy(INTEGER(VECTOR_ELT(ret_data, OPT_COUNT)), kmer_counts.a, kmer_counts.n * sizeof(int));
+  }
   free(buffer);
   kv_destroy(kmer_pos);
   kv_destroy(kmer_pair_pos);
+  kv_destroy(kmer_counts);
   UNPROTECT(1);
   return(ret_data);
 }

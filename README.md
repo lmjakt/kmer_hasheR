@@ -74,6 +74,8 @@ Returns a named `R` `list` object containing the following elements:
    columns (`i`, `x`, `y`) that indicate the kmer index (`i`), and two
    positions where the kmer was found where $x < y$ (i.e. it gives the
    upper triangle of off diagonal alignments).
+4. `count`: the number of occurences of the k-mer in the sequence. One value for
+   each kmer as in `kmer`.
    
    Pair positions are only given for k-mers found more than once in the sequence.
    However, common k-mers will give rise to large numbers of pairs ($n * (n-1)/2$)
@@ -99,6 +101,7 @@ Each of the elements may be `NULL` depending on the value of `opt.flag`.
 	- 1: Return a list of kmer sequences.
 	- 2: Return k-mer positions.
 	- 4: Return pair positions.
+	- 8: Return counts.
 
 # Performance, limitations and future
 
@@ -107,8 +110,13 @@ Each of the elements may be `NULL` depending on the value of `opt.flag`.
 Creating a 32-mer hash for ca. 40 million base pairs took
 approximately 10 seconds on a single core of an "Intel(R) Xeon(R) Gold
 6248R CPU @ 3.00GHz"; obtaining coordinates for these (excluding pair
-positions) took around 15 seconds. I have not tested shorter sequences
-as the time taken is much less than required for down-stream analyses.
+positions) took around 15 seconds. It appears that the first time that
+kmer-sequences are retrieved is much more time consuming (taking up to
+80 seconds). This is likely because `R` stores strings as a hash;
+the first time it comes across a string it will need to create a new
+entry in the hash. In general you should not need to obtain the k-mer
+sequences if positions are retrieved as you can then get the k-mers
+from the original sequence.
 
 I have not checked memory requirements; but these will be in excess of
 $4 * l$ ($l$ is the length of the sequence) for the hash itself. Obtaining
@@ -131,10 +139,10 @@ about this function.
 
 ### Limitations
 
-- I have not checked for memory leaks using `valgrind`, but I expect
-  that memory leaks *will* result from attempting to create excessively
-  large pair pos tables (or any other operation leading to excessive sizes).
-- The `kmer.pos()` function should thus check the size of data before using
+- `valgrind` did not reveal any memory leaks, but I expect that memory
+  leaks *will* result from attempting to create excessively large pair
+  pos tables (or any other operation leading to excessive sizes).
+- The `kmer.pos()` function should be modified to check the size of data before using
   `R`'s memory allocation functions.
 - `k` is limited to 32; this is somewhat small, but sufficient for my current
   needs. This limitation arises from encoding `k-mers` using 64 bit unsigned
@@ -156,5 +164,3 @@ elsewhere then I may provide additional functionality. There are
 a number of obvious improvements which can be made, but I will only
 implement these if I have a need. If you have some such need, then,
 feel free to discuss.
-
-

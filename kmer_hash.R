@@ -9,7 +9,6 @@ make.kmer.hash <- function(seq, k, do.sort=FALSE){
 
 kmer.pos <- function(ex.ptr, opt.flag){
     tmp <- .Call("kmer_positions", ex.ptr, as.integer(opt.flag))
-    names(tmp) <- c('kmer', 'pos', 'pair.pos')
     if(!is.null(tmp$pos)){
         tmp$pos <- t(tmp$pos)
         colnames(tmp$pos) <- c("i", "pos")
