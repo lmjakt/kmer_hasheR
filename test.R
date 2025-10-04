@@ -1,6 +1,7 @@
 require("Biostrings")
 
 seq <- readDNAStringSet("test.fa")
+sseq <- as.character(seq[1])
 seq.2 <- readDNAStringSet("fLopPis1.1.hap2.fa")
 seq.3 <- as.character(seq.2[["SUPER_6"]])
 rm(seq.2)
@@ -9,7 +10,7 @@ source("kmer_hash.R")
 ptr.1 <- make.kmer.hash(seq, 10, do.sort=FALSE)
 pos.1 <- kmer.pos(ptr.1, opt.flag=15)
 
-ptr.2 <- make.kmer.hash(seq, 32)
+ptr.2 <- make.kmer.hash(sseq, 17)
 pos.2 <- kmer.pos(ptr.2, opt.flag=7)
 
 ## this does take rather a lot of time. That's not that surprising

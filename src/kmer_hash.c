@@ -135,10 +135,16 @@ int kmer_h_insert(uint64_t kmer, int pos, khash_t(kmer_h) *hash){
 // returns the total number of kmers encountered
 int seq_to_hash(const char *seq, int k, khash_t(kmer_h) *hash){
   size_t i = 0;
-  unsigned long offset = 0;
+  uint64_t offset = 0;
   int word_count = 0;
   // if k is 32, then (1 << (2*k)) may be undefined behaviour
-  uint64_t mask = k < 32 ? (1 << (2*k)) - 1 : ~0LL;
+  // the values that are shifted must be specified as 64 bit;
+  // it is possible to do this using 0LL and 1LL, but
+  // I'm making it explicit here as I don't think, L, and LL
+  // are actually guaranteed to be any particular word length.
+  uint64_t one = 1;
+  uint64_t zero = 0;
+  uint64_t mask = k < 32 ? (one << (2*k)) - 1 : ~zero;
   int ins_ret = 0;
   while(seq[i]){
     // pass any potential Ns
