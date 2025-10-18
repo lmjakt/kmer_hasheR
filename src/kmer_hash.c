@@ -435,14 +435,16 @@ SEXP kmer_pair_pos(SEXP ptr_a, SEXP ptr_b){
   khiter_t it_a;
   khiter_t it_b;
   for(it_a = kh_begin(a->hash); it_a != kh_end(a->hash); ++it_a){
+    Rprintf( "%ld\n", kh_key(a->hash, it_a));
     it_b = kh_get(kmer_h, b->hash, kh_key(a->hash, it_a));
     if(kh_exist(b->hash, it_b)){
       kmer_pos_t av = kh_val(a->hash, it_a);
       kmer_pos_t bv = kh_val(b->hash, it_b);
+      Rprintf("a: %ld  b: %ld\n", av.v.n, bv.v.n);
       for(size_t i=0; i < av.v.n; ++i){
 	for(size_t j=0; j < bv.v.n; ++j){
 	  kv_push(int, pairs, av.v.a[i]);
-	  kv_push(int, pairs, bv.v.a[i]);
+	  kv_push(int, pairs, bv.v.a[j]);
 	}
       }
     }

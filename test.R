@@ -1,4 +1,4 @@
-require("Biostrings")
+source("kmer_hash.R")
 
 ## no Biostrings package. and on the plane!
 read.fasta <- function(fn){
@@ -35,10 +35,12 @@ seq.rc <- rev.comp(seq)
 ## seq.3 <- as.character(seq.2[["SUPER_6"]])
 ## rm(seq.2)
 
-source("kmer_hash.R")
+
 ptr.1 <- make.kmer.hash(seq, 10, do.sort=FALSE)
 ptr.2 <- make.kmer.hash(seq.rc, 10, do.sort=FALSE)
 
+## oops;;; some problem here.. 
+k.pairs <- kmer.pairs(ptr.1, ptr.2)
 
 pos.1 <- kmer.pos(ptr.1, opt.flag=15)
 
