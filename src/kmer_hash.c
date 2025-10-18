@@ -383,7 +383,7 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
       if(opt_flag & flags[OPT_COUNT])
 	kv_push(int, kmer_counts, kv.v.n);
       ++i;
-      if(opt_flag & (flags[OPT_POS] | flags[OPT_PAIRS]) == 0)
+      if((opt_flag & (flags[OPT_POS] | flags[OPT_PAIRS])) == 0)
 	continue;
       for(int j=0; j < kv.v.n; ++j){
 	if(opt_flag & flags[OPT_POS]){
@@ -426,10 +426,39 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
   return(ret_data);
 }
 
+SEXP kmer_pair_pos(SEXP ptr_a, SEXP ptr_b){
+  khash_ptr *a = extract_khash_ptr(ptr_a);
+  khash_ptr *b = extract_khash_ptr(ptr_b);
+  // collect points in kvec_int
+  kvec_t(int) pairs;
+  kv_init(pairs);
+  khiter_t it_a;
+  khiter_t it_b;
+  for(it_a = kh_begin(a->hash); it_a != kh_end(a->hash); ++it_a){
+    it_b = kh_get(kmer_h, b->hash, kh_key(a->hash, it_a));
+    if(kh_exist(b->hash, it_b)){
+      kmer_pos_t av = kh_val(a->hash, it_a);
+      kmer_pos_t bv = kh_val(b->hash, it_b);
+      for(size_t i=0; i < av.v.n; ++i){
+	for(size_t j=0; j < bv.v.n; ++j){
+	  kv_push(int, pairs, av.v.a[i]);
+	  kv_push(int, pairs, bv.v.a[i]);
+	}
+      }
+    }
+  }
+  SEXP ret_ptr = PROTECT(allocMatrix(INTSXP, 2, pairs.n/2));
+  int *ret_data = INTEGER(ret_ptr);
+  memcpy(ret_data, pairs.a, pairs.n * sizeof(int));
+  kv_destroy(pairs);
+  UNPROTECT(1);
+  return(ret_ptr);
+}
 
 static const R_CallMethodDef callMethods[] = {
 	      {"make_kmer_h_index", (DL_FUNC)&make_kmer_h_index, 3},
 	      {"kmer_positions", (DL_FUNC)&kmer_positions, 2},
+	      {"kmer_pair_pos", (DL_FUNC)&kmer_pair_pos, 2},
 	      {NULL, NULL, 0}
 };
 

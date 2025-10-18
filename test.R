@@ -1,13 +1,45 @@
 require("Biostrings")
 
-seq <- readDNAStringSet("test.fa")
-sseq <- as.character(seq[1])
-seq.2 <- readDNAStringSet("fLopPis1.1.hap2.fa")
-seq.3 <- as.character(seq.2[["SUPER_6"]])
-rm(seq.2)
+## no Biostrings package. and on the plane!
+read.fasta <- function(fn){
+    lines <- readLines(fn)
+    id.i <- grep("^>", lines)
+    beg.i <- id.i + 1
+    end.i <- c(id.i - 1, length(lines))[-1]
+    seq <- mapply(function(b, e){
+        paste(lines[b:e], collapse="")
+    }, beg.i, end.i)
+    names(seq) <- sub("^>([ ]+).*$", "\\1", lines[id.i])
+    seq
+}
+
+## A -> T 0 -> 2
+## C -> G 1 -> 3
+## G -> C 3 -> 1
+## T -> A 2 -> 0
+## (v + 2) % 4
+
+rev.comp <- function(seq){
+    nucs <- c("A", "C", "T", "G")
+    seq.2b <- lapply(seq, function(x){ bitwAnd(3, bitwShiftR(utf8ToInt(x), 1)) })
+    seq.2b <- lapply(seq.2b, function(x){ rev((x + 2) %% 4) })
+    sapply(seq.2b, function(x){ paste(nucs[1+x], collapse="") })
+}
+
+seq <- read.fasta("test.fa")
+seq.rc <- rev.comp(seq)
+
+## seq <- readDNAStringSet("test.fa")
+## sseq <- as.character(seq[1])
+## seq.2 <- readDNAStringSet("fLopPis1.1.hap2.fa")
+## seq.3 <- as.character(seq.2[["SUPER_6"]])
+## rm(seq.2)
 
 source("kmer_hash.R")
 ptr.1 <- make.kmer.hash(seq, 10, do.sort=FALSE)
+ptr.2 <- make.kmer.hash(seq.rc, 10, do.sort=FALSE)
+
+
 pos.1 <- kmer.pos(ptr.1, opt.flag=15)
 
 ptr.2 <- make.kmer.hash(sseq, 17)

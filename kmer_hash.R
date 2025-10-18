@@ -20,3 +20,8 @@ kmer.pos <- function(ex.ptr, opt.flag){
     tmp
 }
 
+kmer.pairs <- function(ptr.a, ptr.b){
+    tmp <- t(.Call("kmer_pair_pos", ptr.a, ptr.b))
+    colnames(tmp) <- c("a", "b")
+    tmp
+}
