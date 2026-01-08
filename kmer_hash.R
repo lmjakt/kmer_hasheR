@@ -7,6 +7,21 @@ make.kmer.hash <- function(seq, k, do.sort=FALSE){
           as.integer(k), as.integer(do.sort))
 }
 
+## hash.ptr: a suitable pointer to a hash object..
+## params: k, source, source.no
+## seq: nucleotide sequences
+## returns the external pointer.
+count.kmers <- function(seq, params, hash.ptr=NULL){
+    params <- as.integer(params)
+    .Call("count_kmers", hash.ptr, params, seq);
+}
+
+count.kmers.fq <- function(fq.file, params, hash.ptr=NULL){
+    params <- as.integer(params)
+    .Call("count_kmers_fastq", hash.ptr, params, fq.file);
+}
+
+
 kmer.pos <- function(ex.ptr, opt.flag){
     tmp <- .Call("kmer_positions", ex.ptr, as.integer(opt.flag))
     if(!is.null(tmp$pos)){

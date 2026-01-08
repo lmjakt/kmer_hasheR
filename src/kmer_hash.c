@@ -1,9 +1,12 @@
 #include <R.h>
 #include <Rinternals.h>
 #include <stdint.h>
+#include <zlib.h>
 #include "khash.h"
 #include "kvec.h"
 #include "ksort.h"
+#include "kseq.h"
+KSEQ_INIT(gzFile, gzread)
 
 // a macro to update an offset as defined here
 #define UPDATE_OFFSET(off, c) ( ((off) << 2) | (( (c) >> 1) & 3) )
@@ -22,6 +25,7 @@ static const char* kmer_pos_fields[N_OPTS] = {"kmer", "pos", "pair.pos", "count"
 // Used to translate offsets to sequences.
 const char NUC[4] = {'A', 'C', 'T', 'G'};
 const char *kmer_hash_tag = "kmer_hash_250930";
+//const char *kmer_count_tag = "kmer_count_250930";
 
 // For sorting integers:
 // #define int_lt(a,b) ((a) < (b))
@@ -29,12 +33,16 @@ KSORT_INIT_GENERIC(int)
 
 
 // This will translate into code that defines an
-// hash using 64 bit integers as keys and
-// kvec_t(int) as the values...
+// hash using 64 bit integers as keys
+// and the value as a kmer_pos_t
+// It is intended for relatively short sequences.
+// kvec_t(int)
 // the flag value can be set by functions in order to
 // mark k-mers that should be treated differently.
 // the pos flag may be used to mark positions that
 // should be treated differently.
+// The pos vector can also be used to hold counts from different
+// sources.
 typedef struct {
   kvec_t(int) v;
   uint64_t kmer;
@@ -43,11 +51,12 @@ typedef struct {
 } kmer_pos_t;
 KHASH_MAP_INIT_INT64(kmer_h, kmer_pos_t);
 
-// Use this to keep structs;
-typedef struct {
-  int x, y, nskip;
-} segment_t;
 
+// Intended for assembling diagonals; not yet implemented, and
+// no current plans.
+/* typedef struct { */
+/*   int x, y, nskip; */
+/* } segment_t; */
 
 void clear_kmer_h(khash_t(kmer_h) *hash){
   khiter_t k;
@@ -69,7 +78,6 @@ typedef struct {
   int sorted;
 } khash_ptr;
 
-
 /// utility function;
 SEXP mk_strsxp(const char **words, size_t n){
   SEXP words_r = PROTECT(allocVector(STRSXP, n));
@@ -79,10 +87,28 @@ SEXP mk_strsxp(const char **words, size_t n){
   return(words_r);
 }
 
+// a more universal function to extract a pointer
+// check that the tag value is correct.
+// Returns a null pointer if it encounters an error; does not
+// call error as this may be used by the finalise function.
+void* extract_ext_ptr(SEXP ptr_r, const char *tag){
+  if(TYPEOF(ptr_r) != EXTPTRSXP)
+    return(0);
+  SEXP tag_r = PROTECT(R_ExternalPtrTag(ptr_r));
+  // check the tag;
+  if(TYPEOF(tag_r) != STRSXP || length(tag_r) != 1 || strcmp( CHAR(STRING_ELT(tag_r, 0)), tag)){
+    UNPROTECT(1);
+    return(0);
+  }
+  UNPROTECT(1);
+  return( R_ExternalPtrAddr(ptr_r) );
+}
+
 // We need a finalise function to clear resources
 // when the external pointer goes out of scope
 static void finalise_khash_ptr(SEXP ptr_r){
-  void *v_ptr = R_ExternalPtrAddr(ptr_r);
+  void *v_ptr = extract_ext_ptr(ptr_r, kmer_hash_tag);
+  //  void *v_ptr = R_ExternalPtrAddr(ptr_r);
   if(!v_ptr)
     return;
   khash_ptr *ptr = (khash_ptr*)v_ptr;
@@ -116,6 +142,7 @@ size_t init_kmer(const char *seq, size_t i, unsigned long *offset, int k){
   return( i + j );
 }
 
+// Returns 0 if kmer exists in hash; otherwise 1
 int kmer_h_insert(uint64_t kmer, int pos, khash_t(kmer_h) *hash){
   int ret =0;
   int new_kmer = 0;
@@ -132,7 +159,44 @@ int kmer_h_insert(uint64_t kmer, int pos, khash_t(kmer_h) *hash){
   return(new_kmer);
 }
 
+// The same as kmer_h_insert, but only increments one of several counters
+// kmer: a long representing the sequence
+// hash: the hash
+// source: the source of the kmer (a sequence)
+// source_n: the total number of sources
+// note that source_n > source must be true
+//        
+// Returns 1 if kmer is new, otherwise 0
+int kmer_count_insert(uint64_t kmer, khash_t(kmer_h) *hash, size_t source, size_t source_n){
+  // consider removing the check later if the code works as expected.
+  if(source >= source_n){
+    warning("source (%ld) equal to or larger than source_n (%ld)", source, source_n);
+    return(-1);
+  }
+  int ret =0;
+  int new_kmer = 0;
+  khiter_t k = kh_get(kmer_h, hash, kmer);
+  if(k == kh_end(hash)){
+    k = kh_put(kmer_h, hash, kmer, &ret);
+    if(k == kh_end(hash)) // error should warn or something
+      return(-1);
+    kv_init(kh_val(hash, k).v);
+    kh_val(hash, k).kmer = kmer;
+    kh_val(hash, k).v.a = malloc(source_n * sizeof(int));
+    memset(kh_val(hash, k).v.a, 0, sizeof(int) * source_n);
+    kh_val(hash, k).v.m = source_n;
+    kh_val(hash, k).v.n = source_n;
+    new_kmer = 1;
+  }
+  kh_val(hash, k).v.a[source]++;
+  return(new_kmer);
+}
+
+
 // returns the total number of kmers encountered
+// seq: ascii encoded sequence
+// k   : the kmer length
+// hash: the khash
 int seq_to_hash(const char *seq, int k, khash_t(kmer_h) *hash){
   size_t i = 0;
   uint64_t offset = 0;
@@ -166,6 +230,53 @@ int seq_to_hash(const char *seq, int k, khash_t(kmer_h) *hash){
   }
   return(word_count);
 }
+
+// This is almost identical code to seq_to_hash
+// It would be better to refactor, but at the moment I can't
+// think of a good function signature that would not be confusing
+// seq: ascii encoded sequence
+// k   : the kmer length
+// hash: the khash
+// source: an integer giving the source of the sequence
+// source_n: the total number of sequence sources
+int seq_to_counts(const char *seq, int k, khash_t(kmer_h) *hash, size_t source, size_t source_n){
+  if(source >= source_n){
+    warning("seq_to_counts: source (%ld) is larger than or equal to source_n (%ld)", source, source_n);
+    return(-1);
+  }
+  size_t i = 0;
+  uint64_t offset = 0;
+  int word_count = 0;
+  // if k is 32, then (1 << (2*k)) may be undefined behaviour
+  // the values that are shifted must be specified as 64 bit;
+  // it is possible to do this using 0LL and 1LL, but
+  // I'm making it explicit here as I don't think, L, and LL
+  // are actually guaranteed to be any particular word length.
+  uint64_t one = 1;
+  uint64_t zero = 0;
+  uint64_t mask = k < 32 ? (one << (2*k)) - 1 : ~zero;
+  int ins_ret = 0;
+  while(seq[i]){
+    // pass any potential Ns
+    i = init_kmer(seq, i, &offset, k);
+    if(!seq[i])
+      break;
+    ins_ret = kmer_count_insert( offset & mask, hash, source, source_n );
+    if(ins_ret < 0)
+      return(ins_ret);
+    word_count += ins_ret;
+    while(seq[i] && LC(seq[i]) != 'n'){
+      offset = UPDATE_OFFSET(offset, seq[i]);
+      ++i;
+      ins_ret = kmer_count_insert( offset & mask, hash, source, source_n );
+      if(ins_ret < 0)
+	return(ins_ret);
+      word_count += ins_ret;
+    }
+  }
+  return(word_count);
+}
+
 
 void sort_kmer_pos(khash_ptr *hash_ptr){
   khash_t(kmer_h) *hash = hash_ptr->hash;
@@ -285,6 +396,7 @@ khash_ptr* extract_khash_ptr(SEXP ptr_r){
   return(hash_ptr); // which should be checked by the caller
 }
 
+
 SEXP make_kmer_h_index(SEXP seq_r, SEXP k_r, SEXP sort_pos_r){
   if(TYPEOF(seq_r) != STRSXP || length(seq_r) < 1)
     error("seq_r should be a character vector of length at least one");
@@ -321,6 +433,117 @@ SEXP make_kmer_h_index(SEXP seq_r, SEXP k_r, SEXP sort_pos_r){
   return(ptr_r);
 }
 
+// hash_ptr_r: an external pointer containing a hash_ptr structure
+//             if NULL, or not a pointer, then a new hash_ptr will be
+//             created.
+// params:     k, source, source_n. All integers. 
+//             source_n must be positive (>0) and larger than source
+// seq_r:      An R STRSXP object. All sequences within it will be added.
+SEXP count_kmers(SEXP hash_ptr_r, SEXP params_r, SEXP seq_r){
+  if(TYPEOF(seq_r) != STRSXP || length(seq_r) < 1)
+    error("seq_r should be a character vector of length at least one");
+  if(TYPEOF( params_r ) != INTSXP || length(params_r) != 3 )
+    error("k_r must be an integer vector of length 3");
+  int *params = INTEGER(params_r);
+  int k = params[0];
+  int source = params[1];
+  int source_n = params[2];
+  if(k < 1 || k > MAX_K)
+    error("k must be a positive integer less than 1+MAX_K");
+  if(source_n < 1 || source >= source_n)
+    error("source_n must be larger than 1 and larger than source");
+  SEXP ptr_r = hash_ptr_r;
+  khash_ptr *khash_p = (khash_ptr*)extract_ext_ptr(hash_ptr_r, kmer_hash_tag);
+  int protect_n = 0;
+  if(khash_p == 0){
+    khash_p = calloc( 1, sizeof(khash_ptr) );
+    khash_p->k = k;
+    khash_p->hash = kh_init(kmer_h);
+    SEXP tag = PROTECT(mk_strsxp(&kmer_hash_tag, 1));
+    ptr_r = PROTECT(R_MakeExternalPtr(khash_p, tag, R_NilValue));
+    R_RegisterCFinalizerEx(ptr_r, finalise_khash_ptr, TRUE);
+    protect_n = 2;
+  }
+  if(khash_p->k != k){
+    UNPROTECT(protect_n);
+    error("mismatch between specified k and that given in the external pointer");
+  }
+  for(int i=0; i < length(seq_r); ++i){
+    const char *seq = CHAR(STRING_ELT(seq_r, i));
+    if(length(STRING_ELT(seq_r, i)) <= k)
+      continue;
+    int kmer_n = seq_to_counts(seq, k, khash_p->hash, (size_t)source, (size_t)source_n);
+    if(kmer_n > 0)
+      khash_p->kmer_count += kmer_n;
+  }
+  UNPROTECT(protect_n);
+  return(ptr_r);
+}
+
+
+// hash_ptr_r: an external pointer containing a hash_ptr structure
+//             if NULL, or not a pointer, then a new hash_ptr will be
+//             created.
+// params:     k, source, source_n. All integers. 
+//             source_n must be positive (>0) and larger than source
+// fq_file_r:  The name of fastq file; may be compressed.
+// Note:   this should work with fasta files as well.
+//         KSEQ_INIT(gzFile, gzread)
+// at the top of the file: not sure what that does, but I'll check it later.
+SEXP count_kmers_fastq(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
+  if(TYPEOF(fq_file_r) != STRSXP || length(fq_file_r) != 1)
+    error("fq_file should be a character vector of length at least one");
+  if(TYPEOF( params_r ) != INTSXP || length(params_r) != 3 )
+    error("k_r must be an integer vector of length 3");
+  const char *fq_file = CHAR(STRING_ELT(fq_file_r, 0));
+  int *params = INTEGER(params_r);
+  int k = params[0];
+  int source = params[1];
+  int source_n = params[2];
+  if(k < 1 || k > MAX_K)
+    error("k must be a positive integer less than 1+MAX_K");
+  if(source_n < 1 || source >= source_n)
+    error("source_n must be larger than 1 and larger than source");
+  SEXP ptr_r = hash_ptr_r;
+  khash_ptr *khash_p = (khash_ptr*)extract_ext_ptr(hash_ptr_r, kmer_hash_tag);
+  int protect_n = 0;
+  if(khash_p == 0){
+    khash_p = calloc( 1, sizeof(khash_ptr) );
+    khash_p->k = k;
+    khash_p->hash = kh_init(kmer_h);
+    SEXP tag = PROTECT(mk_strsxp(&kmer_hash_tag, 1));
+    ptr_r = PROTECT(R_MakeExternalPtr(khash_p, tag, R_NilValue));
+    R_RegisterCFinalizerEx(ptr_r, finalise_khash_ptr, TRUE);
+    protect_n = 2;
+  }
+  if(khash_p->k != k){
+    UNPROTECT(protect_n);
+    error("mismatch between specified k and that given in the external pointer");
+  }
+  gzFile fp;
+  kseq_t *seq;
+  fp = gzopen(fq_file, "r");
+  seq = kseq_init(fp);
+  int l;
+  while( (l = kseq_read(seq)) >= 0){
+    if(seq->seq.l <= k)
+      continue;
+    int kmer_n = seq_to_counts(seq->seq.s, k, khash_p->hash, (size_t)source, (size_t)source_n);
+    if(kmer_n > 0)
+      khash_p->kmer_count += kmer_n;
+  }
+  kseq_destroy(seq);
+  gzclose(fp);
+  UNPROTECT(protect_n);
+  return(ptr_r);
+}
+
+// To count kmers from fastq files I can use kseq.h
+// this allows me to read one sequence at a time from compressed fastq / fasta files
+// in theory, this means that I could use the quality information present in the
+// read data.
+// See example usage of kseq.h at
+// https://attractivechaos.github.io/klib/#Kseq%3A%20stream%20buffer%20and%20FASTA%2FQ%20parser
 
 
 // Return list containing optionally:
@@ -459,6 +682,8 @@ SEXP kmer_pair_pos(SEXP ptr_a, SEXP ptr_b){
 
 static const R_CallMethodDef callMethods[] = {
 	      {"make_kmer_h_index", (DL_FUNC)&make_kmer_h_index, 3},
+	      {"count_kmers", (DL_FUNC)&count_kmers, 3},
+	      {"count_kmers_fastq", (DL_FUNC)&count_kmers_fastq, 3},
 	      {"kmer_positions", (DL_FUNC)&kmer_positions, 2},
 	      {"kmer_pair_pos", (DL_FUNC)&kmer_pair_pos, 2},
 	      {NULL, NULL, 0}

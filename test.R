@@ -29,17 +29,20 @@ rev.comp <- function(seq){
 seq <- read.fasta("test.fa")
 seq.rc <- rev.comp(seq)
 
-## seq <- readDNAStringSet("test.fa")
-## sseq <- as.character(seq[1])
-## seq.2 <- readDNAStringSet("fLopPis1.1.hap2.fa")
-## seq.3 <- as.character(seq.2[["SUPER_6"]])
-## rm(seq.2)
+nchar(seq) ## 59940
 
+## The following sequence is not provided by the repository
+## consider replacing with a different one.
+require("Biostrings")
+seq.2 <- readDNAStringSet("fLopPis1.1.hap2.fa")
+seq.3 <- as.character(seq.2[["SUPER_6"]])
+rm(seq.2)
+nchar(seq.3) / 1e6 ## 40.00614
 
 ptr.1 <- make.kmer.hash(seq, 10, do.sort=FALSE)
 ptr.2 <- make.kmer.hash(seq.rc, 10, do.sort=FALSE)
 
-## oops;;; some problem here.. 
+## This crashes; don't do unless you are fixing the issue
 k.pairs <- kmer.pairs(ptr.1, ptr.2)
 
 pos.1 <- kmer.pos(ptr.1, opt.flag=15)
@@ -47,20 +50,52 @@ pos.1 <- kmer.pos(ptr.1, opt.flag=15)
 ptr.2 <- make.kmer.hash(sseq, 17)
 pos.2 <- kmer.pos(ptr.2, opt.flag=7)
 
+## count only
+source("kmer_hash.R")
+counts.ptr <- count.kmers(seq, c(21, 0, 2), NULL)
+counts.ptr <- count.kmers(seq, c(21, 1, 2), counts.ptr)
+
+counts.k <- kmer.pos(counts.ptr, opt.flag=1 + 2 + 8)
+counts <-  do.call(rbind, with(counts.k, tapply(pos[,'pos'], pos[,'i'], eval)))
+counts <- data.frame(kmer=counts.k$kmer, n=counts[,1])
+o <- order(counts$n, decreasing=TRUE)
+head( counts[o,], n=30 ) ## the top ones are telomore sequences. That's nice.
+tail( counts[o,], n=30 )
+plot( counts$n[o], type='l' )
+
+system.time(
+    counts.ptr.1 <- count.kmers.fq("test.fastq.gz", c(21, 0, 2), NULL)
+)
+##  user  system elapsed 
+## 0.049   0.000   0.050 
+
+counts.k <- kmer.pos(counts.ptr.1, opt.flag=1 + 2 + 8)
+counts <-  do.call(rbind, with(counts.k, tapply(pos[,'pos'], pos[,'i'], eval)))
+counts <- data.frame(kmer=counts.k$kmer, n=counts[,1])
+o <- order(counts$n, decreasing=TRUE)
+head(counts[o,], n=30)
+
+system.time(
+    counts.ptr.1 <- count.kmers.fq("test.fastq.gz", c(21, 1, 2), counts.ptr.1)
+)
+##  user  system elapsed 
+## 0.038   0.001   0.038 
+
+counts.k <- kmer.pos(counts.ptr.1, opt.flag=1 + 2 + 8)
+
 ## this does take rather a lot of time. That's not that surprising
 ## it has to be said...
-source("kmer_hash.R")
+
+
 system.time(
     ptr.3 <- make.kmer.hash(seq.3, 32)
 )
-##    user  system elapsed
-##  9.683   1.652  11.335 
-## 10.421   2.248  12.670
-## 10.598   2.269  12.867 
-##  7.721   1.212   8.934
-## previously:
 ##  user  system elapsed 
-## 9.574   0.856  10.429 
+## 7.980   1.703   9.684 
+
+## That is for 40 Mbp. For the complete Lophius genome
+## we might then expect something like 20 * 10 -> 200
+## seconds. That's not too bad.
 
 ## kmer sequences only:
 system.time(
