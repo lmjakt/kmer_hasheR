@@ -16,9 +16,37 @@ count.kmers <- function(seq, params, hash.ptr=NULL){
     .Call("count_kmers", hash.ptr, params, seq);
 }
 
+
+## params: k, report_n, prefix_bits, max memory, min quality, max_read_n
 count.kmers.fq <- function(fq.file, params, hash.ptr=NULL){
     params <- as.integer(params)
     .Call("count_kmers_fastq", hash.ptr, params, fq.file);
+}
+
+## params: k, report_n, prefix_bits, max memory, min quality, max_read_n
+count.kmers.fq.sh <- function(fq.file, params, hash.ptr=NULL){
+    params <- as.integer(params)
+    .Call("count_kmers_fastq_sh", hash.ptr, params, fq.file);
+}
+
+## params: k, report_n, prefix_bits, thread_n, min_quality, max_read_n, queue_buffer_size
+count.kmers.fq.sh.mt <- function(fq.file, params, hash.ptr=NULL){
+    params <- as.integer(params)
+    .Call("count_kmers_fastq_sh_mt", hash.ptr, params, fq.file);
+}
+
+count.kmers.fq.sh.rp <- function(fq.file, params, hash.ptr=NULL){
+    params <- as.integer(params)
+    .Call("count_kmers_fastq_sh_rp", hash.ptr, params, fq.file);
+}
+
+
+kmer.spec.kt <- function(ptr, max.count){
+    .Call("kmer_spectrum_ktree", ptr, as.integer(max.count))
+}
+
+kmer.spec.sh <- function(ptr, max.count){
+    .Call("kmer_spectrum_suffix_hash", ptr, as.integer(max.count))
 }
 
 
