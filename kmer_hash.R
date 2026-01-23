@@ -40,6 +40,10 @@ count.kmers.fq.sh.rp <- function(fq.file, params, hash.ptr=NULL){
     .Call("count_kmers_fastq_sh_rp", hash.ptr, params, fq.file);
 }
 
+seq.kmer.depth.sh <- function(hash.ptr, seq, k){
+    .Call("seq_kmer_depth_sh", hash.ptr, as.character(seq), 
+          as.integer(k))
+}
 
 kmer.spec.kt <- function(ptr, max.count){
     .Call("kmer_spectrum_ktree", ptr, as.integer(max.count))

@@ -364,6 +364,9 @@ system.time(
 
 (1259.443 + 1141.009) / 60 ## 40 minutes
 
+## This is now using 16.8 GB of memory. That is not a problem. lets try with longer k-mers
+## and with higher minimum quality?
+
 system.time(
     spc.q20 <- kmer.spec.sh(ptr.q20, 1e4)
 )
@@ -374,7 +377,15 @@ get.peaks <- function(x){
     k <- 3:length(x)
     j <- k-1
     i <- j-1
-    1 + which(x[j] > x[i] & x[j] > x[k])
+    pk <- 1 + which(x[j] > x[i] & x[j] > x[k])
+    tr <- 1 + which(x[j] < x[i] & x[j] < x[k])
+    tr.i <- sapply(pk, function(x){
+        b <- x > tr;
+        c( rev(which(b))[1], which(!b)[1] )
+    })
+    p <- cbind(tr[tr.i[1,]], pk, tr[tr.i[2,]])
+    b <- x[p[,2]] > x[p[,1]] & x[p[,2]] > x[p[,3]]
+    p[b, ]
 }
 
 sum(spc.q20) / 1e6 ## 1065.572
@@ -382,18 +393,252 @@ sum(spc.q20[ -(1:10) ]) / 1e6 ## 693.9576
 
 plot(spc.q20, type='l')
 
-plot(spc.q20[2:200], type='l', ylim=c(0, 2e7))
 spc.q20.p <- get.peaks(spc.q20)
+b <- (spc.q20.p[,3] - spc.q20.p[,1]) >= 15 & !is.na(spc.q20.p[,1])
+
+x <- 5:200
+plot(x, spc.q20[x], type='l', ylim=c(0, 2e7))
+abline(v=spc.q20.p[b,2], lty=2)
+
+x <- 5:1e4
+plot(x, log10(spc.q20[x]), type='l')
+abline(v=spc.q20.p[b,2], lty=2)
+
+x <- 5:1000
+plot(x, log10(spc.q20[x]), type='l')
+abline(v=spc.q20.p[b,2], lty=2)
+
+## try with higher minimum quality:
+## anyway, try
+t <- 33
+system.time(
+    ptr.q30 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 22, 30, t, -1, 100), NULL)
+)
+##      user    system   elapsed 
+## 36138.320  1121.330  1163.009 
+system.time(
+    ptr.q30 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R2.fastq", c(21, 22, 30, t, -1, 100), ptr.q30)
+)
+##      user    system   elapsed 
+## 30626.364  1105.183   986.400 
+## and 31 mers
+t <- 33
+system.time(
+    p31.q30 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(31, 22, 30, t, -1, 100), NULL)
+)
+##      user    system   elapsed 
+## 36931.175  1480.776  1226.964 
+system.time(
+    p31.q30 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R2.fastq", c(31, 22, 30, t, -1, 100), p31.q30)
+)
+##      user    system   elapsed 
+## 29925.467  1192.712   980.037
+
+## at this time I'm using about 90 Gb.
+## for ptr.q20, ptr.q30, p31.q30
+## would guess that the first two take about 30 Gb
+## and the other almost three times as much ?
+## 31/21 : around 50% more memory required to store the
+## each k-mer. 
+
+system.time(
+    spc.q30 <- kmer.spec.sh(ptr.q30, 1e4)
+)
+##  user  system elapsed 
+## 9.684   2.569  12.253 
 
 
-k <- 3:length(spc.q20)
-j <- k-1
-i <- j-1
-peaks.i <- which( spc.q20[j] > spc.q20[i] & spc.q20[j] > spc.q20[k] )
+## this is now way slower.. would be nice to multithread
+## 
+system.time(
+    spc.k31.q30 <- kmer.spec.sh(p31.q30, 1e4)
+)
+##    user  system elapsed 
+## 164.384  49.852 214.306 
 
-plot(5:200, spc.q20[5:200], type='l')
-abline(v=peaks.i+1)
-abline(v=peaks.i[1]/2)
+## the first trough is at position 7 for spc.q30
+## plot from position 3
+x <- 3:200
+plot(x, spc.k31.q30[x], type='l', col='red')
+lines(x, spc.q30[x], type='l', col='blue') ## this has a less well defined trough
+lines(x, spc.q20[x], type='l') ## this has a less well defined trough
+
+## using a higher quality threshold leaves me with less pronounced peaks
+## presumably due to the lower number of counts. This is even more true
+## for k 31.
+
+## lets try doing this with min_q = 15 and see how that goes. I'm not sure
+## I would expect it will take longer and result in a larger memory requirement
+t <- 33
+
+system.time(
+    ptr.q15 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 22, 15, t, -1, 100), NULL)
+)
+##      user    system   elapsed 
+## 40148.581  1110.945  1272.427 
+
+system.time(
+    ptr.q15 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R2.fastq", c(21, 22, 15, t, -1, 100), ptr.q30)
+)
+##      user    system   elapsed 
+## 37103.275  1282.995  1205.456 
+
+spc.q15 <- kmer.spec.sh(ptr.q15, 1e4)
+lines(x, spc.q15[x], type='l', col='brown')  ## this is actually worse than for q20?
+
+### the count.kmers.fq.sh.rp now calculates the likelihood of a kmer being correct.
+### this is more complex, but may be a better thing to do. How much slower is it though?
+### and does it work?
+t <- 33
+system.time(
+    ptr.q20 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 22, 20, t, 1e7, 100), NULL)
+)
+## note this was compiled with debug settings and no optimisation
+##     user   system  elapsed 
+## 1426.703   36.296   46.995 
+1e7 / 46.995 ## 212788.6, quite a lot slower than simply checking for individual bases.
+
+## compiled with -O2
+t <- 33
+system.time(
+    ptr.q20 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 22, 20, t, 1e7, 100), NULL)
+)
+##     user   system  elapsed 
+## 1095.804   42.265   36.898 
+1e7 / 36.898 ## 271017.4
+
+## with -O3 (by calling ./release.sh)
+t <- 33
+system.time(
+    ptr.q20 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 22, 20, t, 1e7, 100), NULL)
+)
+##     user   system  elapsed 
+## 1075.609   39.477   36.732 
+1e7 / 36.732 ## 272242.2
+
+## lets try with 47 cores..
+t <- 47
+system.time(
+    ptr.q20 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 22, 20, t, 1e7, 100), NULL)
+)
+##     user   system  elapsed 
+## 1380.096   50.553   33.335 
+1e7 / 33.335 ## 299985
+
+t <- 33
+system.time(
+    ptr.q20 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 22, 20, t, -1, 100), NULL)
+)
+##      user    system   elapsed 
+## 44835.721  1161.988  1431.567 
+system.time(
+    ptr.q20 <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R2.fastq", c(21, 22, 20, t, -1, 100), ptr.q20)
+)
+##      user    system   elapsed 
+## 38896.172  1032.692  1243.560
+(1431.567 + 1243.560) / 60 ## 44.6 minutes
+
+system.time(
+    spc.q20 <- kmer.spec.sh(ptr.q20, 1e4)
+)
+##   user  system elapsed 
+## 13.048   0.644  13.693 
+
+## this gives me many more than I got previously
+sum(spc.q20) / 1e6 ## 1334.487
+
+## 
+plot(spc.q20, type='l')
+
+x <- 4:200
+plot(x, spc.q20[x], type='l')
+
+## but the peak position is at a lower point.
+t <- 33
+system.time(
+    ptr.h1 <- count.kmers.fq.sh.rp("fLopPis1.1.hap1.fa", c(21, 22, 20, t, -1, 100), NULL)
+)
+##    user  system elapsed 
+## 769.889  33.472  27.339 
+
+system.time(
+    ptr.h2 <- count.kmers.fq.sh.rp("fLopPis1.1.hap2.fa", c(21, 22, 20, 32, -1, 100), NULL)
+)
+##    user  system elapsed 
+## 772.187  37.702  39.298 
+
+system.time(
+    ptr.d <- count.kmers.fq.sh.rp("fLopPis1.1.hap1.fa", c(21, 22, 20, 33, -1, 100), NULL)
+)
+##    user  system elapsed 
+## 796.130  29.477  27.754 
+
+system.time(
+    ptr.d <- count.kmers.fq.sh.rp("fLopPis1.1.hap2.fa", c(21, 22, 20, 33, -1, 100), ptr.d)
+)
+##    user  system elapsed
+## 762.188  21.837  26.255 
+
+require("Biostrings")
+hap1 <- readDNAStringSet("fLopPis1.1.hap1.fa")
+hap2 <- readDNAStringSet("fLopPis1.1.hap2.fa")
+
+
+system.time(
+    sup.6.h1 <- seq.kmer.depth.sh(ptr.h1, hap1[6], 21)
+)
+
+
+system.time(
+    sup.6.kd <- seq.kmer.depth.sh(ptr.d, hap1[6], 21)
+)
+##   user  system elapsed 
+## 10.461   1.833  12.293 
+
+## a very rough averaging
+ws <- 10000
+sup.6.kd.m <- matrix(sup.6.kd, nrow=ws)
+sup.6.h1.m <- matrix(sup.6.h1, nrow=ws)
+
+x <- (1:ncol(sup.6.kd.m)) * ws
+y <- colMeans(sup.6.kd.m)
+
+x1 <- 1:ncol(sup.6.h1.m) * ws
+y1 <- colMeans(sup.6.h1.m)
+
+plot(x, y, type='l')
+lines(x1, y1, type='l', col='red')
+
+plot(x, log2(y), type='l')
+
+ll
+
+l <- 1e4
+h1.spc <- kmer.spec.sh(ptr.h1, l)
+h2.spc <- kmer.spec.sh(ptr.h2, l)
+d.spc <- kmer.spec.sh(ptr.d, l)
+
+sum(h1.spc) / 1e6 ## 666.6506
+sum(h2.spc) / 1e6 ## 666.2317
+sum(d.spc) / 1e6 ## 688.7254
+
+plot(d.spc, type='l')
+plot(0:l, log2(h1.spc), col='red')
+points(0:l, log2(h2.spc), col='blue')
+points(0:l, log2(d.spc), type='p')
+
+
+hist((10 + sup.6.kd.2) / (10 + sup.6.kd))
+
+y1 <- colMeans(matrix(sup.6.kd, nrow=100))
+y2 <- colMeans(matrix(sup.6.kd.2, nrow=100))
+x <- 100 * seq_along(y1) - 50
+par(mfrow=c(2,1))
+plot(x, y1, type='l')
+plot(x, y2, type='l')
+
+x <- 5e6:1.5e7
+plot(x, log2(1+sup.6.kd[x]), type='l')
 
 ## it's quite possible that a prime number (or at least even)
 ## number of threads will give a better performance..
@@ -409,7 +654,40 @@ rp.time.2 <- sapply(30:33, function(t){
 ## 31 threads better than 32; 33 way better
 326094.0 / 207210.9 ## 1.57373
 
+## how does the new quality values affect this...
+q.ptrs <- lapply(c(20, 25, 30), function(q){
+    system.time(
+        kc <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 18, q, 33, 1e7, 100), NULL)
+    )
+    kc
+})
+    
+q.spc <- sapply(q.ptrs, function(x){ kmer.spec.sh(x, 1e4) })
+colSums(q.spc) ## [1] 468489914 378293994         0
+## none with less than a 1/1000 probability of error!
+## q = 25 is equivalent to 0.3% wrong
+378293994 / 468489914  ## 0.81
+## q 25 may be OK.
+
+
+##### test errors in counting kmers..
+require("Biostrings")
+rep4.bs <- readDNAStringSet("repeat_4.fa")
+rep4 <- as.character(rep4.bs)
+rep4.kc <- oligonucleotideFrequency( rep4.bs, 10 )
+short.bs <- readDNAStringSet("short.fa")
+short <- as.character(short.bs)
+
+source("kmer_hash.R"); ptr <- count.kmers.fq.sh.rp("repeat_4.fa", c(10, 10, 30, 1, 1, 100), NULL)
+tmp1 <- seq.kmer.depth.sh(ptr, rep4[1], 10)
+
+ptr2 <- count.kmers.fq.sh.rp("repeat_4.fa", c(10, 10, 30, 1, 2, 100), NULL)
+tmp2 <- seq.kmer.depth.sh(ptr2, rep4[1], 10) 
+tmp3 <- seq.kmer.depth.sh(ptr2, rep4[2], 10) 
 ## and this while we have quite some activity from aruna as well... 
+
+source("kmer_hash.R"); ptr <- count.kmers.fq.sh.rp("short.fa", c(10, 10, 30, 2, 2, 100), NULL)
+tmp <- seq.kmer.depth.sh(ptr, short[1], 10)
 
 ## one consumer to keep things simple.. 
 ## source("kmer_hash.R"); ptr.7 <- count.kmers.fq.sh.mt("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 1e5, 18, 1, 30, 100, 100), NULL)

@@ -152,11 +152,11 @@ static void finalise_suffix_hash_mt_ptr(SEXP ptr_r){
 }
 
 
-size_t skip_n(const char *seq, size_t i){
-  while(seq[i] && LC(seq[i]) == 'n')
-    ++i;
-  return(i);
-}
+/* size_t skip_n(const char *seq, size_t i){ */
+/*   while(seq[i] && LC(seq[i]) == 'n') */
+/*     ++i; */
+/*   return(i); */
+/* } */
 
 /* size_t skip_n_qual(const char *seq, const char *qual, char min_q, size_t i){ */
 /*   while(seq[i] && (LC(seq[i]) == 'n' || (qual && qual[i] < min_q))) */
@@ -980,6 +980,30 @@ SEXP count_kmers_fastq_sh_rp(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
   return(ptr_r);
 }
 
+SEXP seq_kmer_depth_sh(SEXP hash_ptr_r, SEXP seq_r, SEXP k_r){
+  suffix_hash *sh = extract_ext_ptr(hash_ptr_r, suffix_hash_tag);
+  if(!sh)
+    error("unable to obtain suffix_hash from external pointer");
+  if(TYPEOF(k_r) != INTSXP || length(k_r) != 1)
+    error("k_r should be a single integer");
+  int k = asInteger(k_r);
+  if(TYPEOF(seq_r) != STRSXP || length(seq_r) != 1)
+    error("seq_r should be a character vector of length 1");
+  SEXP seq_rr = STRING_ELT(seq_r, 0);
+  size_t seq_l = (size_t)length(seq_rr);
+  const char *seq = CHAR(seq_rr);
+  SEXP counts_r = PROTECT(allocVector(INTSXP, seq_l));
+  int *counts = INTEGER(counts_r);
+  if( seq_kmer_counts(seq, seq_l, counts, sh, k) != 1 ){
+    UNPROTECT(1);
+    error("Receieved error from seq_kmer_counts");
+  }
+  UNPROTECT(1);
+  return(counts_r);
+}
+  
+
+
 // A copy of count_kmers_fastq_sh
 // These functions should be restructured to avoid the current mess
 // params: k, report_n, prefix_bits, thread_n, min_quality, max_read_n
@@ -1257,6 +1281,7 @@ static const R_CallMethodDef callMethods[] = {
 	      {"count_kmers_fastq_sh", (DL_FUNC)&count_kmers_fastq_sh, 3},
 	      {"count_kmers_fastq_sh_mt", (DL_FUNC)&count_kmers_fastq_sh_mt, 3},
 	      {"count_kmers_fastq_sh_rp", (DL_FUNC)&count_kmers_fastq_sh_rp, 3},
+	      {"seq_kmer_depth_sh", (DL_FUNC)&seq_kmer_depth_sh, 3},
 	      {"kmer_spectrum_ktree", (DL_FUNC)&kmer_spectrum_ktree, 2},
 	      {"kmer_spectrum_suffix_hash", (DL_FUNC)&kmer_spectrum_suffix_hash, 2},
 	      {"kmer_positions", (DL_FUNC)&kmer_positions, 2},

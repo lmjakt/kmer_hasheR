@@ -53,23 +53,23 @@ void free_suffix_hash(suffix_hash *kt){
 
 // returns negative values for errors
 // else, the actual count of the kmer
-int sh_add_kmer(suffix_hash *kt, uint64_t kmer){
-  kmer &= kt->kmer_mask;
-  size_t prefix_i = kmer >> kt->suffix_bits;
-  size_t suffix = kmer & kt->suffix_mask;
-  if(prefix_i > kt->prefix_n)
+int sh_add_kmer(suffix_hash *sh, uint64_t kmer){
+  kmer &= sh->kmer_mask;
+  size_t prefix_i = kmer >> sh->suffix_bits;
+  size_t suffix = kmer & sh->suffix_mask;
+  if(prefix_i >= sh->prefix_n)
     return(-1);
-  if(!kt->prefixes[prefix_i]){
-    kt->prefixes[prefix_i] = kh_init(kcount);
-    if(!kt->prefixes[prefix_i]){
+  if(!sh->prefixes[prefix_i]){
+    sh->prefixes[prefix_i] = kh_init(kcount);
+    if(!sh->prefixes[prefix_i]){
       printf("Failed to initialise new hash for prefix: %ld suffix: %ld   kmer: %ld\n", prefix_i, suffix, kmer);
-      printf("previously allocated: %ld\n", kt->allocated);
-      printf("prefix / suffix bits %d / %d\n", kt->prefix_bits, kt->suffix_bits);
+      printf("previously allocated: %ld\n", sh->allocated);
+      printf("prefix / suffix bits %d / %d\n", sh->prefix_bits, sh->suffix_bits);
       return(-2);
     }
-    kt->allocated++;
+    sh->allocated++;
   }
-  khash_t(kcount) *hash = kt->prefixes[prefix_i];
+  khash_t(kcount) *hash = sh->prefixes[prefix_i];
   int ret;
   khiter_t k = kh_get(kcount, hash, (uint32_t)suffix);
   if(k == kh_end(hash) || !kh_exist(hash, k)){
@@ -79,31 +79,33 @@ int sh_add_kmer(suffix_hash *kt, uint64_t kmer){
     kh_value(hash, k)++;
   }
   uint32_t count = kh_value(hash, k);
-  if(count > kt->max_count){
-    kt->max_count = count;
-    kt->max_count_kmer = kmer;
+  if(count > sh->max_count){
+    sh->max_count = count;
+    sh->max_count_kmer = kmer;
   }
   return((int)count);
 }
 
-uint32_t sh_kmer_count(suffix_hash *kt, uint64_t kmer){
-  kmer &= kt->kmer_mask;
-  size_t p_i = kmer >> kt->suffix_bits;
-  size_t s_i = kmer & kt->suffix_mask;
-  if(!kt->prefixes[p_i])
+uint32_t sh_kmer_count(suffix_hash *sh, uint64_t kmer){
+  kmer &= sh->kmer_mask;
+  size_t p_i = kmer >> sh->suffix_bits;
+  size_t s_i = kmer & sh->suffix_mask;
+  if(p_i >= sh->prefix_n || !sh->prefixes[p_i])
     return(0);
-  khash_t(kcount) *hash = kt->prefixes[p_i];
+  khash_t(kcount) *hash = sh->prefixes[p_i];
   khiter_t k = kh_get(kcount, hash, (uint32_t)s_i);
+  if(k == kh_end(hash) || !kh_exist(hash, k))
+    return(0);
   return(kh_value(hash, k));
 }
 
-size_t sh_count_spectrum(suffix_hash *kt, double *counts, uint32_t counts_n){
+size_t sh_count_spectrum(suffix_hash *sh, double *counts, uint32_t counts_n){
   uint32_t max_count = counts_n - 1;
   size_t n = 0;
-  for(size_t i=0; i < kt->prefix_n; ++i){
-    if(!kt->prefixes[i])
+  for(size_t i=0; i < sh->prefix_n; ++i){
+    if(!sh->prefixes[i])
       continue;
-    khash_t(kcount) *hash = kt->prefixes[i];
+    khash_t(kcount) *hash = sh->prefixes[i];
     khiter_t k;
     for(k=kh_begin(hash); k != kh_end(hash); ++k){
       if(!kh_exist(hash, k)) continue;
@@ -115,6 +117,18 @@ size_t sh_count_spectrum(suffix_hash *kt, double *counts, uint32_t counts_n){
   }
   return(n);
 }
+
+
+void *sh_intersect_thread( void* args ){
+  return(args);
+}
+
+suffix_hash_pair sh_intersect(suffix_hash *sh1, suffix_hash *sh2, uint32_t thread_n){
+  suffix_hash_pair sh_pair;
+  // init and do something
+  return(sh_pair);
+}
+
 
 // this is a bit wasteful. We could do with a simple pointer as the
 // only thing that is different between threads is the kmer_queue
@@ -144,7 +158,6 @@ void *sh_process_kmers(void *thread_args){
   while(1){
     pthread_cond_wait( &args->queue->cond, &args->queue->mutex );
     // I have data to process; at this point I hold the lock;
-    //printf("reader reading\n");
     while(args->queue->n){
       //      pthread_mutex_lock( &args->queue->mutex );
       //printf("%ld\t%ld %ld %ld done: %d\n", args->thread_i, args->queue->i, args->queue->n, args->queue->m, *args->done);
@@ -228,9 +241,7 @@ int suffix_hash_mt_add(suffix_hash_mt* sh, uint64_t kmer){
   if(prefix >= sh->prefix_n)
     return(-1);
   size_t thread_i = prefix % sh->nthreads;
-  //printf("attempting to add to queue %ld\n", thread_i);
   kmer_queue_add(&sh->queues[thread_i], kmer);
-  //printf("added\n");
   return(0);
 }
 
