@@ -118,18 +118,159 @@ size_t sh_count_spectrum(suffix_hash *sh, double *counts, uint32_t counts_n){
   return(n);
 }
 
-
-void *sh_intersect_thread( void* args ){
-  return(args);
+int init_suffix_hash_n(suffix_hash_n* sh, uint32_t counts_n,
+			uint32_t k, uint32_t prefix_bits, uint32_t suffix_bits){
+  uint32_t total_bits = prefix_bits + suffix_bits;
+  if(total_bits != k * 2)
+    return(-1);
+  if(total_bits > SH_KMAX_BITS)
+    return(-2);
+  if(prefix_bits > SH_MAX_PRE_BITS)
+    return(-3);
+  if(suffix_bits > SH_MAX_SUF_BITS)
+    return(-4);
+  if(counts_n > 4)
+    return(-5);
+  sh->k = k;
+  sh->kmer_mask = (1ULL << total_bits) - 1;
+  sh->suffix_mask = (1ULL << sh->suffix_bits);
+  sh->prefix_bits = prefix_bits;
+  sh->suffix_bits = suffix_bits;
+  sh->counts_n = counts_n;
+  sh->prefix_n = 1ULL << prefix_bits;
+  sh->prefixes = calloc(sh->prefix_n, sizeof(void**));
+  sh->kmer_counts = calloc(counts_n, sizeof(uint64_t));
+  return(1);
 }
 
-suffix_hash_pair sh_intersect(suffix_hash *sh1, suffix_hash *sh2, uint32_t thread_n){
-  suffix_hash_pair sh_pair;
-  // init and do something
-  return(sh_pair);
+void free_suffix_hash_n(suffix_hash_n *sh){
+  for(size_t i=0; i < sh->prefix_n; ++i){
+    switch(sh->counts_n){
+    case 1: // khash_t(kcount)
+      kh_destroy(kcount, (khash_t(kcount)*)sh->prefixes[i]);
+      break;
+    case 2:
+      kh_destroy(kcount_2, (khash_t(kcount_2)*)sh->prefixes[i]);
+      break;
+    case 3:
+      kh_destroy(kcount_3, (khash_t(kcount_3)*)sh->prefixes[i]);
+      break;
+    case 4:
+      kh_destroy(kcount_4, (khash_t(kcount_4)*)sh->prefixes[i]);
+      break;
+    default:
+      printf("bugger; unimplemented suffix_hash_n destruction not possible\n");
+      return;
+    }
+  }
+  free(sh->prefixes);
+  free(sh->kmer_counts);
+}
+
+int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
+  if(source >= sh->counts_n)
+    return(-1);
+  kmer &= sh->kmer_mask;
+  uint64_t prefix_i = kmer >> sh->suffix_bits;
+  uint32_t suffix = (uint32_t)(kmer & sh->suffix_mask);
+  if(prefix_i >= sh->prefix_n)
+    return(-2);
+
+  void *hash_p = sh->prefixes[prefix_i];
+  if(!sh->prefixes[prefix_i]){
+    switch(sh->counts_n){
+    case 1:
+      hash_p = kh_init(kcount);
+      break;
+    case 2:
+      hash_p = kh_init(kcount_2);
+      break;
+    case 3:
+      hash_p = kh_init(kcount_3);
+      break;
+    case 4:
+      hash_p = kh_init(kcount_4);
+      break;
+    default:
+      printf("sh_n_add_kmer; kcount_n too high\n");
+      return(-3);
+    }
+  }
+    // This is rather ugly, but can't come up with  better way for now.
+  khiter_t k;
+  int ret;
+  switch(sh->counts_n){
+  case 1:
+    khash_t(kcount) *hash = (khash_t(kcount)*)hash_p;
+    k = kh_get(kcount, hash, suffix);
+    if(k == kh_end(hash) || !kh_exist(hash, k)){
+      k = kh_put(kcount, hash, suffix, &ret);
+      kh_value(hash, k) = 1;
+    }else{
+      kh_value(hash, k)++;
+    }
+    break;
+  case 2:
+    khash_t(kcount_2) *hash_2 = (khash_t(kcount_2)*)hash_p;
+    k = kh_get(kcount_2, hash_2, suffix);
+    if(k == kh_end(hash_2) || !kh_exist(hash_2, k)){
+      k = kh_put(kcount_2, hash_2, suffix, &ret);
+      memset(&kh_value(hash_2, k), 0, sizeof(uint32_t) * sh->counts_n);
+      kh_value(hash_2, k).n[source] = 1;
+    }else{
+      kh_value(hash_2, k).n[source]++;
+    }
+    break;
+  case 3:
+    khash_t(kcount_3) *hash_3 = (khash_t(kcount_3)*)hash_p;
+    k = kh_get(kcount_3, hash_3, suffix);
+    if(k == kh_end(hash_3) || !kh_exist(hash_3, k)){
+      k = kh_put(kcount_3, hash_3, suffix, &ret);
+      memset(&kh_value(hash_3, k), 0, sizeof(uint32_t) * sh->counts_n);
+      kh_value(hash_3, k).n[source] = 1;
+    }else{
+      kh_value(hash_3, k).n[source]++;
+    }
+    break;
+  case 4:
+    khash_t(kcount_4) *hash_4 = (khash_t(kcount_4)*)hash_p;
+    k = kh_get(kcount_4, hash_4, suffix);
+    if(k == kh_end(hash_4) || !kh_exist(hash_4, k)){
+      k = kh_put(kcount_4, hash_4, suffix, &ret);
+      memset(&kh_value(hash_4, k), 0, sizeof(uint32_t) * sh->counts_n);
+      kh_value(hash_4, k).n[source] = 1;
+    }else{
+      kh_value(hash_4, k).n[source]++;
+    }
+    break;
+  default:
+    printf("sh_n_add_kmer; kcount_n too high\n");
+    return(-4);
+  }
+  return(1);
+}
+
+size_t sh_count_spectrum_nc(suffix_hash_n *sh, uint32_t *counts, uint32_t counts_l,
+			    uint32_t comb_in, uint32_t inner){
+  return(0);
 }
 
 
+/* void *sh_intersect_thread( void* args ){ */
+/*   return(args); */
+/* } */
+
+/* suffix_hash_2 sh_intersect(suffix_hash *sh1, suffix_hash *sh2, uint32_t thread_n){ */
+/*   suffix_hash_2 sh_pair; */
+/*   // init and do something */
+/*   return(sh_pair); */
+/* } */
+
+
+// NOTE: This approach of multithreading did not work well;
+//       in fact it only made things slower. I should probably
+//       remove it; however, it may be that modifying in some
+//       way or other might work OK.
 // this is a bit wasteful. We could do with a simple pointer as the
 // only thing that is different between threads is the kmer_queue
 void init_thread_args(suffix_hash_t_args *args,
@@ -245,11 +386,11 @@ int suffix_hash_mt_add(suffix_hash_mt* sh, uint64_t kmer){
   return(0);
 }
 
-void suffix_hash_mt_join(suffix_hash_mt *sh){
-  sh->done = 1;
-  for(size_t i=0; i < sh->nthreads; ++i){
-    pthread_cond_signal(&sh->queues[i].cond);
-    pthread_join(sh->threads[i], NULL);
-    printf("thread %ld joined. Allocated %ld. kmers: %ld\n", i, sh->t_args[i].hashes_allocated, sh->t_args[i].kmer_n);
-  }
-}
+/* void suffix_hash_mt_join(suffix_hash_mt *sh){ */
+/*   sh->done = 1; */
+/*   for(size_t i=0; i < sh->nthreads; ++i){ */
+/*     pthread_cond_signal(&sh->queues[i].cond); */
+/*     pthread_join(sh->threads[i], NULL); */
+/*     printf("thread %ld joined. Allocated %ld. kmers: %ld\n", i, sh->t_args[i].hashes_allocated, sh->t_args[i].kmer_n); */
+/*   } */
+/* } */

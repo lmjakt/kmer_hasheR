@@ -4,7 +4,6 @@
 #include <math.h>
 #include "kmer_reader.h"
 
-// KSEQ_INIT(gzFile, gzread)
 // -708 is approximately log(-DBL_MAX)
 // it doesn't really matter so much, but it's a reasonable value to use.
 // The other values here were obtained using R and copy and paste:
@@ -49,6 +48,24 @@ static const double q_to_ll[256] = {-708, -708, -708, -708, -708, -708, -708, -7
 				       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 				       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+
+// returns the value of j; if it runs out of sequence (i.e. last k-mer)
+// or it finds an N. The caller must check the return value.
+size_t init_kmer(const char *seq, size_t i, unsigned long *offset, int k){
+  size_t j = 0;
+  while(seq[i]){
+    *offset = 0;
+    for(j=0; j < k && seq[i+j] && LC(seq[i+j]) != 'n'; ++j){
+      *offset = UPDATE_OFFSET(*offset, seq[i+j]);
+    }
+    if(seq[i+j] == 0 || j == k)
+      break;
+    // otherwise we hit Ns again;
+    i = skip_n(seq, i + j);
+    j=0;
+  }
+  return( i + j );
+}
 
 void kmer_iterator_init(kmer_iterator *it, uint32_t k, unsigned char min_ql){
   it->seq = 0; it->qual = 0;

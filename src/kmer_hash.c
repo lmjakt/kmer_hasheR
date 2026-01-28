@@ -5,27 +5,11 @@
 #include <time.h>
 #include "khash.h"
 #include "kvec.h"
-#include "ksort.h"
 #include "kseq.h"
+#include "kmer_pos.h"
 #include "kmer_tree.h"
 #include "kmer_reader.h"
 #include "suffix_hash.h"
-// KSEQ_INIT(gzFile, gzread)
-
-/* // a macro to update an offset as defined here */
-/* #define UPDATE_OFFSET(off, c) ( ((off) << 2) | (( (c) >> 1) & 3) ) */
-/* #define UPDATE_OFFSET_RC(off, c) ( ((off) >> 2) | ( (( (((uint64_t)(c) >> 1) & 3) + 2) % 4) << 62 )) */
-/* #define LC(c) ( (c) | 0x20 ) */
-/* #define UC(c) ( (c) & 0xCF ) */
-/* #define MAX_K 32 */
-
-#define OPT_KMER 0
-#define OPT_POS 1
-#define OPT_PAIRS 2
-#define OPT_COUNT 3
-#define N_OPTS 4
-const uint32_t flags[N_OPTS] = {1, 2, 4, 8};
-static const char* kmer_pos_fields[N_OPTS] = {"kmer", "pos", "pair.pos", "count"};
 
 // Used to translate offsets to sequences.
 const char NUC[4] = {'A', 'C', 'T', 'G'};
@@ -33,56 +17,6 @@ const char *kmer_hash_tag = "kmer_hash_250930";
 const char *kmer_tree_tag = "kmer_tree_250930";
 const char *suffix_hash_tag = "suffix_hash_250930";
 const char *suffix_hash_mt_tag = "suffix_hash_mt_250930";
-//const char *kmer_count_tag = "kmer_count_250930";
-
-// For sorting integers:
-// #define int_lt(a,b) ((a) < (b))
-KSORT_INIT_GENERIC(int)
-
-
-// This will translate into code that defines an
-// hash using 64 bit integers as keys
-// and the value as a kmer_pos_t
-// It is intended for relatively short sequences.
-// kvec_t(int)
-// the flag value can be set by functions in order to
-// mark k-mers that should be treated differently.
-// the pos flag may be used to mark positions that
-// should be treated differently.
-// The pos vector can also be used to hold counts from different
-// sources.
-typedef struct {
-  kvec_t(int) v;
-  uint64_t kmer;
-  uint64_t kmer_flag;
-  //  kvec_t(unsigned char) pos_flag; // usage not yet implemented.
-} kmer_pos_t;
-KHASH_MAP_INIT_INT64(kmer_h, kmer_pos_t);
-
-
-void clear_kmer_h(khash_t(kmer_h) *hash){
-  khiter_t k;
-  for(k = kh_begin(hash); k != kh_end(hash); ++k){
-    if(kh_exist(hash, k)){
-	kv_destroy( kh_val(hash, k).v );
-	//	kv_destroy( kh_val(hash, k).pos_flag );
-	kh_del( kmer_h, hash, k );
-    }
-  } 
-}
-
-// The khash will need to be kept as an external pointer
-// that points to some form of information:
-typedef struct {
-  khash_t(kmer_h) *hash;
-  int k;
-  size_t kmer_count;
-  int sorted;
-} khash_ptr;
-
-typedef struct {
-  kmer_tree tree;
-} kmer_tree_ptr;
 
 /// utility function;
 SEXP mk_strsxp(const char **words, size_t n){
@@ -120,7 +54,6 @@ static void finalise_khash_ptr(SEXP ptr_r){
   khash_ptr *ptr = (khash_ptr*)v_ptr;
   if(ptr->hash){
     clear_kmer_h(ptr->hash);
-    kh_destroy(kmer_h, ptr->hash);
     ptr->hash = 0;
   }
 }
@@ -165,23 +98,6 @@ static void finalise_suffix_hash_mt_ptr(SEXP ptr_r){
 /* } */
 
 
-// returns the value of j; if it runs out of sequence (i.e. last k-mer)
-// or it finds an N. The caller must check the return value.
-size_t init_kmer(const char *seq, size_t i, unsigned long *offset, int k){
-  size_t j = 0;
-  while(seq[i]){
-    *offset = 0;
-    for(j=0; j < k && seq[i+j] && LC(seq[i+j]) != 'n'; ++j){
-      *offset = UPDATE_OFFSET(*offset, seq[i+j]);
-    }
-    if(seq[i+j] == 0 || j == k)
-      break;
-    // otherwise we hit Ns again;
-    i = skip_n(seq, i + j);
-    j=0;
-  }
-  return( i + j );
-}
 
 // sets the seq to the sequence represented by the given
 // offset. Assumes that *seq is a char array of size
@@ -240,22 +156,6 @@ size_t init_kmer_qual(const char *seq, const char *qual, char min_q, size_t i, u
 /* } */
 
 
-// Returns 0 if kmer exists in hash; otherwise 1
-int kmer_h_insert(uint64_t kmer, int pos, khash_t(kmer_h) *hash){
-  int ret =0;
-  int new_kmer = 0;
-  khiter_t k = kh_get(kmer_h, hash, kmer);
-  if(k == kh_end(hash)){
-    k = kh_put(kmer_h, hash, kmer, &ret);
-    if(k == kh_end(hash)) // error should warn or something
-      return(-1);
-    kv_init(kh_val(hash, k).v);
-    new_kmer = 1;
-  }
-  kv_push( int, kh_val(hash, k).v, pos );
-  kh_val(hash, k).kmer = kmer;
-  return(new_kmer);
-}
 
 // The same as kmer_h_insert, but only increments one of several counters
 // kmer: a long representing the sequence
@@ -291,43 +191,6 @@ int kmer_count_insert(uint64_t kmer, khash_t(kmer_h) *hash, size_t source, size_
 }
 
 
-// returns the total number of kmers encountered
-// seq: ascii encoded sequence
-// k   : the kmer length
-// hash: the khash
-int seq_to_hash(const char *seq, int k, khash_t(kmer_h) *hash){
-  size_t i = 0;
-  uint64_t offset = 0;
-  int word_count = 0;
-  // if k is 32, then (1 << (2*k)) may be undefined behaviour
-  // the values that are shifted must be specified as 64 bit;
-  // it is possible to do this using 0LL and 1LL, but
-  // I'm making it explicit here as I don't think, L, and LL
-  // are actually guaranteed to be any particular word length.
-  uint64_t one = 1;
-  uint64_t zero = 0;
-  uint64_t mask = k < 32 ? (one << (2*k)) - 1 : ~zero;
-  int ins_ret = 0;
-  while(seq[i]){
-    // pass any potential Ns
-    i = init_kmer(seq, i, &offset, k);
-    if(!seq[i])
-      break;
-    ins_ret = kmer_h_insert( offset & mask, i+1-k, hash );
-    if(ins_ret < 0)
-      return(ins_ret);
-    word_count += ins_ret;
-    while(seq[i] && LC(seq[i]) != 'n'){
-      offset = UPDATE_OFFSET(offset, seq[i]);
-      ++i;
-      ins_ret = kmer_h_insert( offset & mask, i+1-k, hash );
-      if(ins_ret < 0)
-	return(ins_ret);
-      word_count += ins_ret;
-    }
-  }
-  return(word_count);
-}
 
 // This is almost identical code to seq_to_hash
 // It would be better to refactor, but at the moment I can't
@@ -530,19 +393,6 @@ int seq_to_counts_minq(const char *seq, char *qual, char min_q, int k, khash_t(k
 }
 
 
-void sort_kmer_pos(khash_ptr *hash_ptr){
-  khash_t(kmer_h) *hash = hash_ptr->hash;
-  khiter_t it;
-  for(it = kh_begin(hash); it != kh_end(hash); ++it){
-    if(!kh_exist(hash, it))
-      continue;
-    // consider skipping the exists check;
-    // or at least giving a warning message.
-    kmer_pos_t kv = kh_val(hash, it);
-    // there are several options; but lets try introsort
-    ks_introsort(int, kv.v.n, kv.v.a);
-  }
-}
 
 // COMMENTED OUT: the complexity of task attempted in this
 // function requires more concentration than I can give it
@@ -619,6 +469,8 @@ void sort_kmer_pos(khash_ptr *hash_ptr){
 /* } */
 
 
+// function deprecated; should be removed and used replaced with
+// extract_ext_ptr instead.. 
 khash_ptr* extract_khash_ptr(SEXP ptr_r){
   if(TYPEOF(ptr_r) != EXTPTRSXP)
     error("ptr_r should be an external pointer");
@@ -938,7 +790,6 @@ SEXP count_kmers_fastq_sh(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
 
 // use a reader pool
 // params should be k, prefix_bits, min_qual, thread_n, max_read_n, max_memory
-// Currently we do not use the hash_ptr_r; that should be done later
 SEXP count_kmers_fastq_sh_rp(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
   if(TYPEOF(fq_file_r) != STRSXP || length(fq_file_r) != 1)
     error("fq_file should be a character vector of length at least one");
@@ -1183,31 +1034,29 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
   buffer[k] = 0;
   size_t hash_n = kh_size(hash);
   SEXP kmers_r = R_NilValue;
-  if(opt_flag & flags[OPT_KMER]){
+  if(opt_flag & pos_opt_flags[OPT_KMER]){
     SET_VECTOR_ELT( ret_data, 0, allocVector(STRSXP, hash_n));
     kmers_r = VECTOR_ELT(ret_data, 0);
   }
   int i=0;
   for(k_it = kh_begin(hash); k_it != kh_end(hash); ++k_it){
     if(kh_exist(hash, k_it)){
-      //      uint64_t key = kh_key(hash, k_it);
       kmer_pos_t kv = kh_val(hash, k_it);
-      //      kmer_seq(buffer, k, key);
-      if(opt_flag & flags[OPT_KMER]){
+      if(opt_flag & pos_opt_flags[OPT_KMER]){
 	kmer_seq(buffer, k, kv.kmer);
 	SET_STRING_ELT(kmers_r, i, mkChar(buffer));
       }
-      if(opt_flag & flags[OPT_COUNT])
+      if(opt_flag & pos_opt_flags[OPT_COUNT])
 	kv_push(int, kmer_counts, kv.v.n);
       ++i;
-      if((opt_flag & (flags[OPT_POS] | flags[OPT_PAIRS])) == 0)
+      if((opt_flag & (pos_opt_flags[OPT_POS] | pos_opt_flags[OPT_PAIRS])) == 0)
 	continue;
       for(int j=0; j < kv.v.n; ++j){
-	if(opt_flag & flags[OPT_POS]){
+	if(opt_flag & pos_opt_flags[OPT_POS]){
 	  kv_push(int, kmer_pos, i);
 	  kv_push(int, kmer_pos, kv.v.a[j]); // kv_A(kv.v, j));
 	}
-	if(opt_flag & flags[OPT_PAIRS]){
+	if(opt_flag & pos_opt_flags[OPT_PAIRS]){
 	  for(int k=j+1; k < kv.v.n; ++k){
 	    // It would be better to do this with a single push of a struct
 	    // I should change the data structures to do this.
@@ -1221,17 +1070,17 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
   }
   int *pos = 0;
   int *pair_pos = 0;
-  if(opt_flag & flags[OPT_POS]){
+  if(opt_flag & pos_opt_flags[OPT_POS]){
     SET_VECTOR_ELT(ret_data, OPT_POS, allocMatrix(INTSXP, 2, kmer_pos.n / 2));
     pos = INTEGER(VECTOR_ELT(ret_data, OPT_POS));
     memcpy( pos, kmer_pos.a, kmer_pos.n * sizeof(int));
   }
-  if(opt_flag & flags[OPT_PAIRS]){
+  if(opt_flag & pos_opt_flags[OPT_PAIRS]){
     SET_VECTOR_ELT(ret_data, OPT_PAIRS, allocMatrix(INTSXP, 3, kmer_pair_pos.n /3));
     pair_pos = INTEGER(VECTOR_ELT(ret_data, OPT_PAIRS));
     memcpy(pair_pos, kmer_pair_pos.a, kmer_pair_pos.n * sizeof(int));
   }
-  if(opt_flag & flags[OPT_COUNT]){
+  if(opt_flag & pos_opt_flags[OPT_COUNT]){
     SET_VECTOR_ELT(ret_data, OPT_COUNT, allocVector(INTSXP, kmer_counts.n));
     memcpy(INTEGER(VECTOR_ELT(ret_data, OPT_COUNT)), kmer_counts.a, kmer_counts.n * sizeof(int));
   }

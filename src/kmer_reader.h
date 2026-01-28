@@ -1,6 +1,7 @@
 #ifndef _KMER_READER_H
 #define _KMER_READER_H
 
+#include <zlib.h>
 #include "kseq.h"
 #include "suffix_hash.h"
 
@@ -16,6 +17,8 @@ KSEQ_INIT(gzFile, gzread)
   
 size_t skip_n(const char *seq, size_t i);
 size_t skip_n_qual(const char *seq, const char *qual, char min_q, size_t i);
+
+size_t init_kmer(const char *seq, size_t i, unsigned long *offset, int k);
 
 // do forward and reverse complement
 size_t init_kmer_qual_2(const char *seq, const char *qual, char min_q, size_t i,

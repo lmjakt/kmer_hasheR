@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+// NOTE:
+// the kmer_tree structure will probably be removed as it doesn't seem
+// to be either memory or CPU effective .. but it might be if used differently.
+
+
 // This defines a two level hash for holding counts of kmers
 // The data structure is similar to the one used by the program
 // meryl.
@@ -41,6 +46,14 @@ typedef struct {
   size_t allocated;
   size_t max_size;
 } kmer_tree;
+
+// This is redundant. It was used to make an external
+// pointer. But since it only contains the kmer_tree pointer
+// it does nothing.
+typedef struct {
+  kmer_tree tree;
+} kmer_tree_ptr;
+
 
 kmer_tree init_kmer_tree(uint32_t prefix_bits, uint32_t suffix_bits, size_t max_size);
 void free_kmer_tree(kmer_tree *kt);

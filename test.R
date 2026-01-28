@@ -13,6 +13,14 @@ read.fasta <- function(fn){
     seq
 }
 
+read.fq <- function(fn){
+    lines <- readLines(fn)
+    n <- lines[seq(1, length(lines), 4)]
+    s <- lines[seq(2, length(lines), 4)]
+    q <- lines[seq(4, length(lines), 4)]
+    list(s=s, q=q, nm=n)
+}
+
 ## A -> T 0 -> 2
 ## C -> G 1 -> 3
 ## G -> C 3 -> 1
@@ -678,8 +686,11 @@ rep4.kc <- oligonucleotideFrequency( rep4.bs, 10 )
 short.bs <- readDNAStringSet("short.fa")
 short <- as.character(short.bs)
 
-source("kmer_hash.R"); ptr <- count.kmers.fq.sh.rp("repeat_4.fa", c(10, 10, 30, 1, 1, 100), NULL)
-tmp1 <- seq.kmer.depth.sh(ptr, rep4[1], 10)
+rep4 <- read.fq("repeat_40.fq")
+
+source("kmer_hash.R");
+ptr <- count.kmers.fq.sh.rp("repeat_40.fq", c(10, 10, 10, 1, 1, 100), NULL)
+tmp1 <- seq.kmer.depth.sh(ptr, rep4$s[1], 10)
 
 ptr2 <- count.kmers.fq.sh.rp("repeat_4.fa", c(10, 10, 30, 1, 2, 100), NULL)
 tmp2 <- seq.kmer.depth.sh(ptr2, rep4[1], 10) 
