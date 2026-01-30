@@ -168,7 +168,7 @@ int seq_kmer_counts(const char* seq, size_t seq_l, int* counts, suffix_hash_n *s
       kmer_f = off_f & mask;
       kmer_r = off_r >> rc_shift;
       kmer = (kmer_f < kmer_r) ? kmer_f : kmer_r;
-      sh_kmer_count_n(sh, kmer, counts + i * (int)sh->counts_n);
+      sh_kmer_count_n(sh, kmer, counts + (i-k) * (int)sh->counts_n);
       if(!seq[i])
 	break;
     }
@@ -177,7 +177,7 @@ int seq_kmer_counts(const char* seq, size_t seq_l, int* counts, suffix_hash_n *s
     kmer_f = off_f & mask;
     kmer_r = off_r >> rc_shift;
     kmer = (kmer_f < kmer_r) ? kmer_f : kmer_r;
-    sh_kmer_count_n(sh, kmer, counts + i * (int)sh->counts_n);
+    sh_kmer_count_n(sh, kmer, counts + (i-k) * (int)sh->counts_n);
     ++i;
   }
   return(1);

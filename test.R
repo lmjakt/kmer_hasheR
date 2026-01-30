@@ -100,10 +100,28 @@ counts.k <- kmer.pos(counts.ptr.1, opt.flag=1 + 2 + 8)
 ## the other kmers.
 source("kmer_hash.R");
 ## note params are: k, prefix_bits, min_qual, thread_n, max_read_n, max_memory, source
-ptr.0 <- count.kmers.fq.sh.rp("repeat_40.fq", c(5, 2, 0, 1, -1, 100, 4, 0))
-tmp1 <- seq.kmer.depth.sh(ptr.0, rep4$s[1], 5)
 
-ptr.0 <- count.kmers.fq.sh.rp("test.fastq.gz", c(5, 2, 0, 1, 1, 100, 4, 0))
+tn <- 2
+ptr.0 <- count.kmers.fq.sh.rp("repeat_40.fq", c(5, 2, 0, tn, -1, 100, 4, 0))
+tmp1 <- seq.kmer.depth.sh(ptr.0, rep4$s[1], 5)
+##
+ptr.0 <- count.kmers.fq.sh.rp("repeat_40.fq", c(5, 2, 0, tn, -1, 100, 4, 1), ptr.0)
+tmp2 <- seq.kmer.depth.sh(ptr.0, rep4$s[1], 5)
+##
+ptr.0 <- count.kmers.fq.sh.rp("repeat_40.fq", c(5, 2, 0, tn, 2, 100, 4, 3), ptr.0)
+tmp3 <- seq.kmer.depth.sh(ptr.0, rep4$s[1], 5)
+
+test.seq <- read.fq("test.fastq.gz")
+ptr.1 <- count.kmers.fq.sh.rp("test.fastq.gz", c(16, 16, 0, tn, -1, 100, 4, 0))
+
+for(s in (test.seq$s){
+    tmp2 <- seq.kmer.depth.sh(ptr.0, s, 16)
+    cat(s, "\n")
+    plot(tmp2[1,], type='l')
+    inpt <- readline("next: ")
+    if(grep("q", inpt))
+        break
+}
 
 ptr.0 <- count.kmers.fq.sh.rp("repeat.fq", c(5, 1, 0, 100, 30, 100, 4, 1), ptr.0)
 otmp1 <- seq.kmer.depth.sh(ptr.0, rep4$s[1], 5)
