@@ -5,17 +5,24 @@
 #include <time.h>
 #include "khash.h"
 #include "kvec.h"
-#include "kseq.h"
+#include "kmer_util.h"
 #include "kmer_pos.h"
 #include "kmer_tree.h"
 #include "kmer_reader.h"
 #include "suffix_hash.h"
+
+// These may be better off in kmer_pos.h
+// however, they are currently only used in this file.
+// and thus defined here to avoid compiler warnings.
+static const uint32_t pos_opt_flags[N_OPTS] = {1, 2, 4, 8};
+static const char* kmer_pos_fields[N_OPTS] = {"kmer", "pos", "pair.pos", "count"};
 
 // Used to translate offsets to sequences.
 const char NUC[4] = {'A', 'C', 'T', 'G'};
 const char *kmer_hash_tag = "kmer_hash_250930";
 const char *kmer_tree_tag = "kmer_tree_250930";
 const char *suffix_hash_tag = "suffix_hash_250930";
+const char *suffix_hash_n_tag = "suffix_hash_n_250930";
 const char *suffix_hash_mt_tag = "suffix_hash_mt_250930";
 
 /// utility function;
@@ -75,14 +82,24 @@ static void finalise_suffix_hash_ptr(SEXP ptr_r){
   free(ptr);
 }
 
-static void finalise_suffix_hash_mt_ptr(SEXP ptr_r){
-  void *v_ptr = extract_ext_ptr(ptr_r, suffix_hash_mt_tag);
+static void finalise_suffix_hash_n_ptr(SEXP ptr_r){
+  void *v_ptr = extract_ext_ptr(ptr_r, suffix_hash_n_tag);
   if(!v_ptr)
     return;
-  suffix_hash_mt *ptr = (suffix_hash_mt*)v_ptr;
-  free_suffix_hash_mt(ptr);
+  suffix_hash_n *ptr = (suffix_hash_n*)v_ptr;
+  free_suffix_hash_n(ptr);
   free(ptr);
 }
+
+
+/* static void finalise_suffix_hash_mt_ptr(SEXP ptr_r){ */
+/*   void *v_ptr = extract_ext_ptr(ptr_r, suffix_hash_mt_tag); */
+/*   if(!v_ptr) */
+/*     return; */
+/*   suffix_hash_mt *ptr = (suffix_hash_mt*)v_ptr; */
+/*   free_suffix_hash_mt(ptr); */
+/*   free(ptr); */
+/* } */
 
 
 /* size_t skip_n(const char *seq, size_t i){ */
@@ -596,7 +613,7 @@ SEXP count_kmers(SEXP hash_ptr_r, SEXP params_r, SEXP seq_r){
 //             a very large k, but to 
 // fq_file_r:  The name of fastq file; may be compressed.
 // Note:   this should work with fasta files as well.
-//         KSEQ_INIT(gzFile, gzread)
+
 // at the top of the file: not sure what that does, but I'll check it later.
 SEXP count_kmers_fastq(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
   if(TYPEOF(fq_file_r) != STRSXP || length(fq_file_r) != 1)
@@ -789,12 +806,12 @@ SEXP count_kmers_fastq_sh(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
 }
 
 // use a reader pool
-// params should be k, prefix_bits, min_qual, thread_n, max_read_n, max_memory
+// params should be k, prefix_bits, min_qual, thread_n, max_read_n, max_memory, source
 SEXP count_kmers_fastq_sh_rp(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
   if(TYPEOF(fq_file_r) != STRSXP || length(fq_file_r) != 1)
     error("fq_file should be a character vector of length at least one");
-  if(TYPEOF( params_r ) != INTSXP || length(params_r) != 6 )
-    error("k_r must be an integer vector of length 6 (k, prefix_bits, min_q, thread_n, max_reads, max_mem");
+  if(TYPEOF( params_r ) != INTSXP || length(params_r) != 8 )
+    error("k_r must be an integer vector of length 6 (k, prefix_bits, min_q, thread_n, max_reads, max_mem, source_n, source");
   const char *fq_file = CHAR(STRING_ELT(fq_file_r, 0));
   int *params = INTEGER(params_r);
   int k = params[0];
@@ -803,17 +820,25 @@ SEXP count_kmers_fastq_sh_rp(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
   uint32_t thread_n = (uint32_t)params[3];
   size_t max_read_no = (size_t)params[4];
   size_t max_memory = (1ULL << 30) * (size_t)params[5];
+  uint32_t source_n = (uint32_t)params[6];
+  uint32_t source_i = (uint32_t)params[7];
   if(k < 1 || k > MAX_K)
     error("k must be a positive integer less than 1+MAX_K");
+  if(source_n > 4 || source_n < 1)
+    error("Source_n must be in the range 1 - 4");
+  if(source_i >= source_n)
+    error("source_i must be less than source_n");
   // this should run everything in one go
   kmer_reader_pool *krp = malloc(sizeof(kmer_reader_pool));
   // check if we have a valid pointer or not:
-  suffix_hash *sh = extract_ext_ptr(hash_ptr_r, suffix_hash_tag);
+  suffix_hash_n *sh = extract_ext_ptr(hash_ptr_r, suffix_hash_n_tag);
   int sh_is_new = (sh == 0) ? 1 : 0;
   if(!sh)
-    sh = init_kmer_reader_pool(krp, fq_file, k, prefix_bits, max_memory, thread_n, min_q, max_read_no);
+    sh = init_kmer_reader_pool(krp, fq_file, k, prefix_bits, max_memory, thread_n, min_q, max_read_no,
+			       source_n, source_i);
   else
-    sh = init_kmer_reader_pool_sh(krp, fq_file, k, sh, max_memory, thread_n, min_q, max_read_no);
+    sh = init_kmer_reader_pool_sh(krp, fq_file, k, sh, max_memory, thread_n, min_q, max_read_no,
+				  source_i);
   Rprintf("read threads started: returned suffix_hash: %p\n", sh);
   if(!sh)
     error("Did not obtain a suffix_hash");
@@ -824,17 +849,17 @@ SEXP count_kmers_fastq_sh_rp(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
   if(!sh_is_new)
     return(hash_ptr_r);
   // otherwise make a new external pointer.
-  SEXP tag = PROTECT(mk_strsxp(&suffix_hash_tag, 1));
+  SEXP tag = PROTECT(mk_strsxp(&suffix_hash_n_tag, 1));
   SEXP ptr_r = PROTECT(R_MakeExternalPtr(sh, tag, R_NilValue));
-  R_RegisterCFinalizerEx(ptr_r, finalise_suffix_hash_ptr, TRUE);
+  R_RegisterCFinalizerEx(ptr_r, finalise_suffix_hash_n_ptr, TRUE);
   UNPROTECT(2);
   return(ptr_r);
 }
 
 SEXP seq_kmer_depth_sh(SEXP hash_ptr_r, SEXP seq_r, SEXP k_r){
-  suffix_hash *sh = extract_ext_ptr(hash_ptr_r, suffix_hash_tag);
+  suffix_hash_n *sh = extract_ext_ptr(hash_ptr_r, suffix_hash_n_tag);
   if(!sh)
-    error("unable to obtain suffix_hash from external pointer");
+    error("unable to obtain suffix_hash_n from external pointer");
   if(TYPEOF(k_r) != INTSXP || length(k_r) != 1)
     error("k_r should be a single integer");
   int k = asInteger(k_r);
@@ -843,7 +868,7 @@ SEXP seq_kmer_depth_sh(SEXP hash_ptr_r, SEXP seq_r, SEXP k_r){
   SEXP seq_rr = STRING_ELT(seq_r, 0);
   size_t seq_l = (size_t)length(seq_rr);
   const char *seq = CHAR(seq_rr);
-  SEXP counts_r = PROTECT(allocVector(INTSXP, seq_l));
+  SEXP counts_r = PROTECT(allocMatrix(INTSXP, sh->counts_n, seq_l));
   int *counts = INTEGER(counts_r);
   if( seq_kmer_counts(seq, seq_l, counts, sh, k) != 1 ){
     UNPROTECT(1);
@@ -859,92 +884,92 @@ SEXP seq_kmer_depth_sh(SEXP hash_ptr_r, SEXP seq_r, SEXP k_r){
 // These functions should be restructured to avoid the current mess
 // params: k, report_n, prefix_bits, thread_n, min_quality, max_read_n
 //         queue_buffer_size
-SEXP count_kmers_fastq_sh_mt(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){
-  if(TYPEOF(fq_file_r) != STRSXP || length(fq_file_r) != 1)
-    error("fq_file should be a character vector of length at least one");
-  if(TYPEOF( params_r ) != INTSXP || length(params_r) != 7 )
-    error("k_r must be an integer vector of length 7");
-  const char *fq_file = CHAR(STRING_ELT(fq_file_r, 0));
-  int *params = INTEGER(params_r);
-  int k = params[0];
-  size_t report_n = (size_t)params[1];
-  if(report_n < 1){
-    report_n = 1e6;
-    warning("negative or 0 report n value specified: set to 1e6");
-  }
-  uint32_t prefix_bits = (uint32_t)params[2];
-  //  size_t max_memory = (1ULL << 30) * (size_t)params[3];
-  size_t thread_n = params[3];
-  char min_quality = (char)params[4] + '!';
-  size_t max_read_n = (size_t)params[5];
-  if(k < 1 || k > MAX_K)
-    error("k must be a positive integer less than 1+MAX_K");
-  // the limit of the queue_buffer size should depend on the numbe of threads;
-  // if a small number of threads then a large buffer size is OK. But,
-  // to some extent the buffer size doesn't really matter as we will almost certainly
-  // be filling them up, and once it's full it will just keep filling up.
-  size_t q_buffer_size = (size_t)params[6];
-  if(q_buffer_size < 1 || q_buffer_size > 1e6) 
-    error("q_buffer size too small or too large");
-  uint32_t total_bits = 2 * (uint32_t)k;
-  uint32_t suffix_bits = total_bits - prefix_bits;
-  // These should be checked here..
-  if(total_bits > SH_KMAX_BITS || prefix_bits > SH_MAX_PRE_BITS || suffix_bits > SH_MAX_SUF_BITS)
-    error("too many bits somewhere");
-  SEXP ptr_r = hash_ptr_r;
-  int protect_n = 0;
-  suffix_hash_mt *suf_hash = 0; 
-  if(ptr_r == R_NilValue){
-    suf_hash = calloc(1, sizeof(suffix_hash_mt));
-    init_suffix_hash_mt(suf_hash, prefix_bits, suffix_bits, thread_n, q_buffer_size);
-    SEXP tag = PROTECT(mk_strsxp(&suffix_hash_mt_tag, 1));
-    ptr_r = PROTECT(R_MakeExternalPtr(suf_hash, tag, R_NilValue));
-    R_RegisterCFinalizerEx(ptr_r, finalise_suffix_hash_mt_ptr, TRUE);
-    protect_n = 2;
-  }else{
-    suf_hash = (suffix_hash_mt*)extract_ext_ptr(ptr_r, suffix_hash_mt_tag);
-  }
-  if(!suf_hash)
-    error("Unable to extract suffix_hash from external pointer");
-  gzFile fp;
-  kseq_t *seq;
-  fp = gzopen(fq_file, "r");
-  seq = kseq_init(fp);
-  int l;
-  size_t n_reads = 0;
-  // print timing information every report_n reads
-  // include the most frequent kmer
-  //  char *kmer_string = calloc(k+1, sizeof(char));
-  clock_t time_end = 0;
-  clock_t time_beg = clock();
-  size_t total_counted = 0;
-  while( (l = kseq_read(seq)) >= 0 && n_reads < max_read_n){
-    ++n_reads;
-    if(seq->seq.l <= k)
-      continue;
-    int ret = seq_to_counts_sh_mt(seq->seq.s, seq->qual.s, min_quality, k, suf_hash, &total_counted);
-    if(ret < 0){
-      Rprintf("received error code: %d at read: %ld\n", ret, n_reads);
-      break;
-    }
-    if(n_reads % report_n == 0){
-      time_end = clock();
-      // Note: CLOCKS_PER_SEC is not the same as the CPU frequency
-      // instead it is set to 1e6
-      clock_t clicks = time_end - time_beg;
-      Rprintf("%ld reads: %ld reads in %.3e clicks (%f seconds): %.3e reads / second\n",
-	      n_reads, report_n, (double)clicks, (double)clicks / (double)CLOCKS_PER_SEC,
-	      (double)report_n / ((double)clicks / (double)CLOCKS_PER_SEC));
-      Rprintf("Total of %ld words counted\n", total_counted);
-      time_beg = clock();
-    }
-  }
-  suffix_hash_mt_join(suf_hash);
-  kseq_destroy(seq);
-  gzclose(fp);
-  UNPROTECT(protect_n);
-  return(ptr_r);
-}
+/* SEXP count_kmers_fastq_sh_mt(SEXP hash_ptr_r, SEXP params_r, SEXP fq_file_r){ */
+/*   if(TYPEOF(fq_file_r) != STRSXP || length(fq_file_r) != 1) */
+/*     error("fq_file should be a character vector of length at least one"); */
+/*   if(TYPEOF( params_r ) != INTSXP || length(params_r) != 7 ) */
+/*     error("k_r must be an integer vector of length 7"); */
+/*   const char *fq_file = CHAR(STRING_ELT(fq_file_r, 0)); */
+/*   int *params = INTEGER(params_r); */
+/*   int k = params[0]; */
+/*   size_t report_n = (size_t)params[1]; */
+/*   if(report_n < 1){ */
+/*     report_n = 1e6; */
+/*     warning("negative or 0 report n value specified: set to 1e6"); */
+/*   } */
+/*   uint32_t prefix_bits = (uint32_t)params[2]; */
+/*   //  size_t max_memory = (1ULL << 30) * (size_t)params[3]; */
+/*   size_t thread_n = params[3]; */
+/*   char min_quality = (char)params[4] + '!'; */
+/*   size_t max_read_n = (size_t)params[5]; */
+/*   if(k < 1 || k > MAX_K) */
+/*     error("k must be a positive integer less than 1+MAX_K"); */
+/*   // the limit of the queue_buffer size should depend on the numbe of threads; */
+/*   // if a small number of threads then a large buffer size is OK. But, */
+/*   // to some extent the buffer size doesn't really matter as we will almost certainly */
+/*   // be filling them up, and once it's full it will just keep filling up. */
+/*   size_t q_buffer_size = (size_t)params[6]; */
+/*   if(q_buffer_size < 1 || q_buffer_size > 1e6)  */
+/*     error("q_buffer size too small or too large"); */
+/*   uint32_t total_bits = 2 * (uint32_t)k; */
+/*   uint32_t suffix_bits = total_bits - prefix_bits; */
+/*   // These should be checked here.. */
+/*   if(total_bits > SH_KMAX_BITS || prefix_bits > SH_MAX_PRE_BITS || suffix_bits > SH_MAX_SUF_BITS) */
+/*     error("too many bits somewhere"); */
+/*   SEXP ptr_r = hash_ptr_r; */
+/*   int protect_n = 0; */
+/*   suffix_hash_mt *suf_hash = 0;  */
+/*   if(ptr_r == R_NilValue){ */
+/*     suf_hash = calloc(1, sizeof(suffix_hash_mt)); */
+/*     init_suffix_hash_mt(suf_hash, prefix_bits, suffix_bits, thread_n, q_buffer_size); */
+/*     SEXP tag = PROTECT(mk_strsxp(&suffix_hash_mt_tag, 1)); */
+/*     ptr_r = PROTECT(R_MakeExternalPtr(suf_hash, tag, R_NilValue)); */
+/*     R_RegisterCFinalizerEx(ptr_r, finalise_suffix_hash_mt_ptr, TRUE); */
+/*     protect_n = 2; */
+/*   }else{ */
+/*     suf_hash = (suffix_hash_mt*)extract_ext_ptr(ptr_r, suffix_hash_mt_tag); */
+/*   } */
+/*   if(!suf_hash) */
+/*     error("Unable to extract suffix_hash from external pointer"); */
+/*   gzFile fp; */
+/*   kseq_t *seq; */
+/*   fp = gzopen(fq_file, "r"); */
+/*   seq = kseq_init(fp); */
+/*   int l; */
+/*   size_t n_reads = 0; */
+/*   // print timing information every report_n reads */
+/*   // include the most frequent kmer */
+/*   //  char *kmer_string = calloc(k+1, sizeof(char)); */
+/*   clock_t time_end = 0; */
+/*   clock_t time_beg = clock(); */
+/*   size_t total_counted = 0; */
+/*   while( (l = kseq_read(seq)) >= 0 && n_reads < max_read_n){ */
+/*     ++n_reads; */
+/*     if(seq->seq.l <= k) */
+/*       continue; */
+/*     int ret = seq_to_counts_sh_mt(seq->seq.s, seq->qual.s, min_quality, k, suf_hash, &total_counted); */
+/*     if(ret < 0){ */
+/*       Rprintf("received error code: %d at read: %ld\n", ret, n_reads); */
+/*       break; */
+/*     } */
+/*     if(n_reads % report_n == 0){ */
+/*       time_end = clock(); */
+/*       // Note: CLOCKS_PER_SEC is not the same as the CPU frequency */
+/*       // instead it is set to 1e6 */
+/*       clock_t clicks = time_end - time_beg; */
+/*       Rprintf("%ld reads: %ld reads in %.3e clicks (%f seconds): %.3e reads / second\n", */
+/* 	      n_reads, report_n, (double)clicks, (double)clicks / (double)CLOCKS_PER_SEC, */
+/* 	      (double)report_n / ((double)clicks / (double)CLOCKS_PER_SEC)); */
+/*       Rprintf("Total of %ld words counted\n", total_counted); */
+/*       time_beg = clock(); */
+/*     } */
+/*   } */
+/*   suffix_hash_mt_join(suf_hash); */
+/*   kseq_destroy(seq); */
+/*   gzclose(fp); */
+/*   UNPROTECT(protect_n); */
+/*   return(ptr_r); */
+/* } */
 
 
 SEXP kmer_spectrum_ktree(SEXP ext_ptr, SEXP max_count_r){
@@ -1128,7 +1153,6 @@ static const R_CallMethodDef callMethods[] = {
 	      {"count_kmers", (DL_FUNC)&count_kmers, 3},
 	      {"count_kmers_fastq", (DL_FUNC)&count_kmers_fastq, 3},
 	      {"count_kmers_fastq_sh", (DL_FUNC)&count_kmers_fastq_sh, 3},
-	      {"count_kmers_fastq_sh_mt", (DL_FUNC)&count_kmers_fastq_sh_mt, 3},
 	      {"count_kmers_fastq_sh_rp", (DL_FUNC)&count_kmers_fastq_sh_rp, 3},
 	      {"seq_kmer_depth_sh", (DL_FUNC)&seq_kmer_depth_sh, 3},
 	      {"kmer_spectrum_ktree", (DL_FUNC)&kmer_spectrum_ktree, 2},

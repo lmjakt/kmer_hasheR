@@ -129,13 +129,13 @@ int init_suffix_hash_n(suffix_hash_n* sh, uint32_t counts_n,
     return(-3);
   if(suffix_bits > SH_MAX_SUF_BITS)
     return(-4);
-  if(counts_n > 4)
+  if(counts_n > 4 || counts_n < 1)
     return(-5);
   sh->k = k;
   sh->kmer_mask = (1ULL << total_bits) - 1;
-  sh->suffix_mask = (1ULL << sh->suffix_bits);
   sh->prefix_bits = prefix_bits;
   sh->suffix_bits = suffix_bits;
+  sh->suffix_mask = (1ULL << sh->suffix_bits) - 1;
   sh->counts_n = counts_n;
   sh->prefix_n = 1ULL << prefix_bits;
   sh->prefixes = calloc(sh->prefix_n, sizeof(void**));
@@ -176,20 +176,19 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
   if(prefix_i >= sh->prefix_n)
     return(-2);
 
-  void *hash_p = sh->prefixes[prefix_i];
   if(!sh->prefixes[prefix_i]){
     switch(sh->counts_n){
     case 1:
-      hash_p = kh_init(kcount);
+      sh->prefixes[prefix_i] = kh_init(kcount);
       break;
     case 2:
-      hash_p = kh_init(kcount_2);
+      sh->prefixes[prefix_i] = kh_init(kcount_2);
       break;
     case 3:
-      hash_p = kh_init(kcount_3);
+      sh->prefixes[prefix_i] = kh_init(kcount_3);
       break;
-    case 4:
-      hash_p = kh_init(kcount_4);
+          case 4:
+      sh->prefixes[prefix_i] = kh_init(kcount_4);
       break;
     default:
       printf("sh_n_add_kmer; kcount_n too high\n");
@@ -199,6 +198,8 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
     // This is rather ugly, but can't come up with  better way for now.
   khiter_t k;
   int ret;
+  void *hash_p = sh->prefixes[prefix_i];
+  uint32_t count = 0;
   switch(sh->counts_n){
   case 1:
     khash_t(kcount) *hash = (khash_t(kcount)*)hash_p;
@@ -209,6 +210,7 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
     }else{
       kh_value(hash, k)++;
     }
+    count = kh_value(hash, k);
     break;
   case 2:
     khash_t(kcount_2) *hash_2 = (khash_t(kcount_2)*)hash_p;
@@ -220,6 +222,7 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
     }else{
       kh_value(hash_2, k).n[source]++;
     }
+    count = kh_value(hash_2, k).n[source];
     break;
   case 3:
     khash_t(kcount_3) *hash_3 = (khash_t(kcount_3)*)hash_p;
@@ -231,6 +234,7 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
     }else{
       kh_value(hash_3, k).n[source]++;
     }
+    count = kh_value(hash_3, k).n[source];
     break;
   case 4:
     khash_t(kcount_4) *hash_4 = (khash_t(kcount_4)*)hash_p;
@@ -242,13 +246,62 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
     }else{
       kh_value(hash_4, k).n[source]++;
     }
+    count = kh_value(hash_4, k).n[source];
     break;
   default:
     printf("sh_n_add_kmer; kcount_n too high\n");
     return(-4);
   }
+  return(count);
+}
+
+int sh_kmer_count_n(suffix_hash_n *sh, uint64_t kmer, int *counts){
+  kmer &= sh->kmer_mask;
+  size_t p_i = kmer >> sh->suffix_bits;
+  uint32_t suffix = (uint32_t)(kmer & sh->suffix_mask);
+  if(p_i >= sh->prefix_n || !sh->prefixes[p_i]){
+    memset(counts, 0, sizeof(int) * sh->counts_n);
+    return(0);
+  }
+  khiter_t k;
+  uint32_t *sh_count_ptr = 0;
+  void *hash_p = sh->prefixes[p_i];
+  switch(sh->counts_n){
+  case 1:
+    khash_t(kcount) *hash = (khash_t(kcount)*)hash_p;
+    k = kh_get(kcount, hash, suffix);
+    if(k != kh_end(hash) && kh_exist(hash, k))
+      sh_count_ptr = &kh_value(hash, k);
+    break;
+  case 2:
+    khash_t(kcount_2) *hash_2 = (khash_t(kcount_2)*)hash_p;
+    k = kh_get(kcount_2, hash_2, suffix);
+    if(k != kh_end(hash_2) && kh_exist(hash_2, k))
+      sh_count_ptr = (uint32_t*)&(kh_value(hash_2, k).n);
+    break;
+  case 3:
+    khash_t(kcount_3) *hash_3 = (khash_t(kcount_3)*)hash_p;
+    k = kh_get(kcount_3, hash_3, suffix);
+    if(k != kh_end(hash_3) && kh_exist(hash_3, k))
+      sh_count_ptr = (uint32_t*)&kh_value(hash_3, k).n;
+    break;
+  case 4:
+    khash_t(kcount_4) *hash_4 = (khash_t(kcount_4)*)hash_p;
+    k = kh_get(kcount_4, hash_4, suffix);
+    if(k != kh_end(hash_4) && kh_exist(hash_4, k))
+      sh_count_ptr =  (uint32_t*)&kh_value(hash_4, k).n;
+    break;
+  default:
+    printf("sh_n_add_kmer; kcount_n too high\n");
+    return(-4);
+  }
+  if(!sh_count_ptr)
+    memset(counts, 0, sizeof(int) * sh->counts_n);
+  else
+    memcpy(counts, (int*)sh_count_ptr, sizeof(int) * sh->counts_n);
   return(1);
 }
+
 
 size_t sh_count_spectrum_nc(suffix_hash_n *sh, uint32_t *counts, uint32_t counts_l,
 			    uint32_t comb_in, uint32_t inner){

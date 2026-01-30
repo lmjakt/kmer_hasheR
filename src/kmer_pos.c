@@ -1,5 +1,5 @@
 #include "kmer_pos.h"
-#include "kmer_reader.h"
+#include "kmer_util.h"
 #include "ksort.h"
 
 // For sorting integers.

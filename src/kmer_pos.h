@@ -10,8 +10,13 @@
 #define OPT_PAIRS 2
 #define OPT_COUNT 3
 #define N_OPTS 4
-static const uint32_t pos_opt_flags[N_OPTS] = {1, 2, 4, 8};
-static const char* kmer_pos_fields[N_OPTS] = {"kmer", "pos", "pair.pos", "count"};
+
+// The following are not currently used in kmer_pos.c.
+// Commented and moved to kmer_hash.c to avoid compiler
+// warnings.
+// Consider moving functions to kmer_pos.c in the future
+/* static const uint32_t pos_opt_flags[N_OPTS] = {1, 2, 4, 8}; */
+/* static const char* kmer_pos_fields[N_OPTS] = {"kmer", "pos", "pair.pos", "count"}; */
 
 
 // This will translate into code that defines an

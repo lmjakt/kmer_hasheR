@@ -30,11 +30,13 @@ count.kmers.fq.sh <- function(fq.file, params, hash.ptr=NULL){
 }
 
 ## params: k, report_n, prefix_bits, thread_n, min_quality, max_read_n, queue_buffer_size
-count.kmers.fq.sh.mt <- function(fq.file, params, hash.ptr=NULL){
-    params <- as.integer(params)
-    .Call("count_kmers_fastq_sh_mt", hash.ptr, params, fq.file);
-}
+## count.kmers.fq.sh.mt <- function(fq.file, params, hash.ptr=NULL){
+##     params <- as.integer(params)
+##     .Call("count_kmers_fastq_sh_mt", hash.ptr, params, fq.file);
+## }
 
+## params:
+## k, prefix_bits, min_q, thread_n, max_reads, max_mem, source_n, source
 count.kmers.fq.sh.rp <- function(fq.file, params, hash.ptr=NULL){
     params <- as.integer(params)
     .Call("count_kmers_fastq_sh_rp", hash.ptr, params, fq.file);

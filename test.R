@@ -99,6 +99,15 @@ counts.k <- kmer.pos(counts.ptr.1, opt.flag=1 + 2 + 8)
 ## 49 repeats of CTGGA
 ## the other kmers.
 source("kmer_hash.R");
+## note params are: k, prefix_bits, min_qual, thread_n, max_read_n, max_memory, source
+ptr.0 <- count.kmers.fq.sh.rp("repeat_40.fq", c(5, 2, 0, 1, -1, 100, 4, 0))
+tmp1 <- seq.kmer.depth.sh(ptr.0, rep4$s[1], 5)
+
+ptr.0 <- count.kmers.fq.sh.rp("test.fastq.gz", c(5, 2, 0, 1, 1, 100, 4, 0))
+
+ptr.0 <- count.kmers.fq.sh.rp("repeat.fq", c(5, 1, 0, 100, 30, 100, 4, 1), ptr.0)
+otmp1 <- seq.kmer.depth.sh(ptr.0, rep4$s[1], 5)
+
 ptr.0 <- count.kmers.fq("repeat.fq", c(5, 1, 0, 100, 30, 100))
 
 ptr.0 <- count.kmers.fq("repeat.fq", c(5, 1, 0, 100, 30, 100))
@@ -689,7 +698,7 @@ short <- as.character(short.bs)
 rep4 <- read.fq("repeat_40.fq")
 
 source("kmer_hash.R");
-ptr <- count.kmers.fq.sh.rp("repeat_40.fq", c(10, 10, 10, 1, 1, 100), NULL)
+ptr <- count.kmers.fq.sh.rp("repeat_40.fq", c(10, 10, 10, 2, -1, 100), NULL)
 tmp1 <- seq.kmer.depth.sh(ptr, rep4$s[1], 10)
 
 ptr2 <- count.kmers.fq.sh.rp("repeat_4.fa", c(10, 10, 30, 1, 2, 100), NULL)

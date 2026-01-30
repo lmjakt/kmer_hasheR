@@ -81,14 +81,14 @@ uint32_t sh_kmer_count(suffix_hash *sh, uint64_t kmer);
 // counts should point to a an array of integers of length counts_n
 size_t sh_count_spectrum(suffix_hash *sh, double *counts, uint32_t counts_n);
 
-
+// counts_n must be in the range 1->4
 int init_suffix_hash_n(suffix_hash_n* sh, uint32_t counts_n,
 			uint32_t k, uint32_t prefix_bits, uint32_t suffix_bits);
 void free_suffix_hash_n(suffix_hash_n *sh);
 int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer);
 
 // counts must point to an array of length sh->counts_n
-void sh_kmer_count_n(suffix_hash_n *sh, uint64_t kmer, uint32_t* counts);
+int sh_kmer_count_n(suffix_hash_n *sh, uint64_t kmer, int *counts);
 // counts should be an array of length counts_l * sh->counts_n
 // comb defines which k-mers are counted. For a kmer to be counted, it must have
 // been observed in all bits set to 1, and NOT observed in any bit set to 0
