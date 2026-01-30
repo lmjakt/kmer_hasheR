@@ -2,6 +2,8 @@
 #include <zlib.h>
 #include <float.h> // for DBL_MAX
 #include <math.h>
+#include <wchar.h> // for wmemset;
+#include <limits.h> // for INT_MIN
 #include "kmer_util.h"
 #include "kmer_reader.h"
 
@@ -158,7 +160,10 @@ int seq_kmer_counts(const char* seq, size_t seq_l, int* counts, suffix_hash_n *s
   uint64_t kmer = 0;
   uint32_t rc_shift = 64 - (k * 2);
   uint64_t mask = (1ULL << (k * 2)) - 1;
-  memset(counts, 0, sizeof(int) * seq_l * sh->counts_n);
+  // INT_MIN should give NA values; this should be defined as
+  // NA_INTEGER, but I can't find the macro for this.
+  wmemset(counts, INT_MIN, seq_l * sh->counts_n);
+  //  memset(counts, 0, sizeof(int) * seq_l * sh->counts_n);
   if(k*2 != sh->suffix_bits + sh->prefix_bits)
     return(-1);
   size_t i = 0;
@@ -171,6 +176,10 @@ int seq_kmer_counts(const char* seq, size_t seq_l, int* counts, suffix_hash_n *s
       sh_kmer_count_n(sh, kmer, counts + (i-k) * (int)sh->counts_n);
       if(!seq[i])
 	break;
+      if(LC(seq[i]) == 'n'){
+	i = skip_n(seq, i);
+	continue;
+      }
     }
     off_f = UPDATE_OFFSET(off_f, seq[i]);
     off_r = UPDATE_OFFSET_RC(off_r, seq[i]);

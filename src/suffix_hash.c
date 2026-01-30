@@ -4,6 +4,16 @@
 #include "suffix_hash.h"
 #include "thread_queue.h"
 
+// An integer NA value is supposed to be represented by NA_INTEGER
+// This is defined as R_NaInt
+// Which does not seem to be defined in the R headers I have.
+// The header files suggest that it is defined as INT_MIN, so we can use
+// that instead.
+//int R_na_int = R_NaInt;
+
+// use this to set count values for positions in sequences that contain
+// N-s and as such should not be given as 0
+
 suffix_hash init_suffix_hash(uint32_t prefix_bits, uint32_t suffix_bits, size_t max_size){
   suffix_hash kt;
   uint32_t total_bits = prefix_bits + suffix_bits;
