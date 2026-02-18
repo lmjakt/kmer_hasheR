@@ -313,8 +313,8 @@ int sh_kmer_count_n(suffix_hash_n *sh, uint64_t kmer, int *counts){
 }
 
 
-size_t sh_count_spectrum_nc(suffix_hash_n *sh, uint32_t *counts, uint32_t counts_l,
-			    uint32_t comb_in, uint32_t inner){
+size_t sh_count_spectrum_nc(suffix_hash_n *sh, double *counts, int max_count,
+			    uint32_t *comb, int comb_n, uint32_t flag){
   return(0);
 }
 

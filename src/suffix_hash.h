@@ -89,13 +89,19 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer);
 
 // counts must point to an array of length sh->counts_n
 int sh_kmer_count_n(suffix_hash_n *sh, uint64_t kmer, int *counts);
+
 // counts should be an array of length counts_l * sh->counts_n
 // comb defines which k-mers are counted. For a kmer to be counted, it must have
 // been observed in all bits set to 1, and NOT observed in any bit set to 0
 // if inner is true
 // if inner is false, then all k-mers counted in any of the bits will be included.
-size_t sh_count_spectrum_nc(suffix_hash_n *sh, uint32_t *counts, uint32_t counts_l,
-			    uint32_t comb_in, uint32_t inner);
+// This uses doubles for the counts since there can be a very large number
+// of k-mers that are only observed once.
+// note that:
+// counts should have the length (max_count + 1) * comb_n
+// If the combination is not valid, then 
+size_t sh_count_spectrum_nc(suffix_hash_n *sh, double *counts, int max_count,
+			    uint32_t *comb, uint32_t comb_n, uint32_t flag);
 
 
 
