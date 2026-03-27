@@ -58,6 +58,7 @@ typedef struct {
   uint64_t kmer_mask;
   uint64_t suffix_mask;
   size_t prefix_n;
+  // consider if making prefixes a union would make our life easier.. 
   void **prefixes;  // khash_t(kcount[2|3|4])*
   uint64_t *kmer_counts;
 } suffix_hash_n;
@@ -90,22 +91,28 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer);
 // counts must point to an array of length sh->counts_n
 int sh_kmer_count_n(suffix_hash_n *sh, uint64_t kmer, int *counts);
 
-// counts should be an array of length counts_l * sh->counts_n
-// comb defines which k-mers are counted. For a kmer to be counted, it must have
-// been observed in all bits set to 1, and NOT observed in any bit set to 0
-// if inner is true
-// if inner is false, then all k-mers counted in any of the bits will be included.
+// comb defines which k-mers are counted. For a kmer to be counted,
+// it must either;
+// if inner is TRUE:
+//    count >= comb_min[i] * comb.i (comb.i is the i-th bit of a combination) must be
+//    TRUE for all bits i
+// if inner is FALSE:
+//    all k-mers counted if count >= comb_min[i] * comb.i
+//    for any i. 
+// any of the bits will be included.
 // This uses doubles for the counts since there can be a very large number
 // of k-mers that are only observed once.
 // note that:
-// counts should have the length (max_count + 1) * comb_n
-// If the combination is not valid, then 
-size_t sh_count_spectrum_nc(suffix_hash_n *sh, double *counts, int max_count,
-			    uint32_t *comb, uint32_t comb_n, uint32_t flag);
+// counts should have the length (max_count + 1) * comb_n * sh->counts_n
+//              sh->counts_n must be in the set [1,2,3,4]
+// counts should have been allocated by R as a matrix
+//           nrow: (sh->counts_n * comb_n)
+//           ncol: (max_count + 1)
+// counts_l should give the total length of this matrix
+// 
+int sh_count_spectrum_nc(suffix_hash_n *sh, double *counts, uint32_t counts_l, uint32_t max_count,
+			 uint32_t *comb, uint32_t *comb_inner, uint32_t comb_n, uint32_t *source_min);
 
-
-
-  
 /* typedef struct { */
 /*   sh_pair_t *threads; */
 /*   uint32_t thread_n; */

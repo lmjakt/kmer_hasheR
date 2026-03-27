@@ -42,10 +42,244 @@ nchar(seq) ## 59940
 ## The following sequence is not provided by the repository
 ## consider replacing with a different one.
 require("Biostrings")
-seq.2 <- readDNAStringSet("fLopPis1.1.hap2.fa")
-seq.3 <- as.character(seq.2[["SUPER_6"]])
-rm(seq.2)
-nchar(seq.3) / 1e6 ## 40.00614
+seq.2 <- readDNAStringSet("fLopPis1.1.hap1.fa")
+sup.6 <- as.character(seq.2[["SUPER_6"]])
+
+nchar(sup.6) / 1e6 ## 40.00614
+
+## count k-mers from R1 to slot 0 of 2
+t1 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 21, 10, 47, -1, 200, 2, 0), NULL)
+)
+## That took around 38 GB of memory
+t2 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R2.fastq", c(21, 21, 10, 47, -1, 200, 2, 0), ptr)
+)
+##
+## count k-mers from the assembly hap1 to slot 1 of 2
+t3 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("fLopPis1.1.hap1.fa", c(21, 21, 10, 47, -1, 200, 2, 1), ptr)
+)
+##
+## and get the k-mer depths for all positions for chromosome 6 haplotype 1.
+sup.6.kd <- seq.kmer.depth.sh(ptr, sup.6, 21)
+
+t1
+##      user    system   elapsed 
+## 67481.258  2159.505  1542.327 
+
+t2
+##      user    system   elapsed 
+## 62856.914  2317.329  1441.592 
+
+t3
+##    user  system elapsed 
+## 995.110  70.583  25.004 
+
+(1542.327 + 1441.592) / 60 ## 49 minutes.. acceptable I guess.
+## 25 seconds for the assembly counts.
+
+## at this point we are using about 60 GB of memory according to top
+## that's compared to about 40 reading in only one of the set of k-kmers.
+##
+## gc() only gives information about memory allocated using R, not
+## memory used by external pointers... 
+##require("profmem")
+## profmem()
+## this requires that R has been compiled with the correct option:
+## ./configure --enable-memory-profiling
+## That can't be guaranteed, so, we should instead build memory profiling
+## into the hash tables.
+
+
+### Note, that these are after restarting R to avoid the time required to
+### clear the hashes.
+
+
+## try the same for 31-mers. If the error estimate is correct then the memory use
+## may not be altogether that different.
+## count k-mers from R1 to slot 0 of 2
+t1 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(31, 28, 10, 47, -1, 200, 2, 0), NULL)
+)
+## memory use at this point about 98 GB. Around twice that for 21-mer
+t1
+##      user    system   elapsed 
+## 68682.307  2344.917  1641.946
+## time to define the k-mers is about the same (1641.946 / 1542.327): 1.06
+## Suggesting that the number of unique k-mers identified is not that different.
+## 
+
+t2 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R2.fastq", c(31, 28, 10, 47, -1, 200, 2, 0), ptr)
+)
+##      user    system   elapsed 
+## 67373.423  2063.461  1558.914 
+
+(1641.946 + 1558.914) / 60 ## 53.34767
+## time increase is very small.
+
+## now the memory use if 139 GB (139/98) == 1.4
+## the ratio of memory use is similar (60/40) == 1.4
+## suggesting that the error rate is similar (the increase in memory use
+## should primarily result from erroneous k-mers.
+
+##
+## count k-mers from the assembly hap1 to slot 1 of 2
+t3 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("fLopPis1.1.hap1.fa", c(31, 28, 10, 47, -1, 200, 2, 1), ptr)
+)
+##     user   system  elapsed 
+## 1186.361   66.196   29.026 
+
+##
+## and get the k-mer depths for all positions for chromosome 6 haplotype 1.
+## note that this is single threaded; but it may be possible to use mclapply
+## 
+t4 <- system.time(
+    sup.6.kd <- seq.kmer.depth.sh(ptr, sup.6, 31)
+)
+##   user  system elapsed 
+## 20.009   6.372  26.382 
+
+## After restarting, what is the effect of using a smaller number of prefix bits?
+t1.25 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(31, 25, 10, 47, -1, 200, 2, 0), NULL)
+)
+##      user    system   elapsed 
+## 68707.602  2301.678  1609.323 
+##
+## This is very similar to using a 28 bit prefix; It is in fact slightly faster
+## but not significantly so.
+## The total memory use is 96 GB. Very similar to 98 GB obtained with 28 bit prefixes
+##
+
+t1.23 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(31, 23, 10, 47, -1, 200, 2, 0), NULL)
+)
+##      user    system   elapsed 
+## 69056.575  2378.771  1616.189 
+## Essentially no difference whatsoever..
+## memory use is also about 96 GB (96.4)
+
+t1.31 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(31, 31, 10, 47, -1, 200, 2, 0), NULL)
+)
+##      user    system   elapsed 
+## 68565.315  2714.884  1658.614
+## This is a bit slower, and it takes 125 GB of memory
+## So in general we should not use very large prefixes.
+
+smooth.subset <- function(dp, x=1:ncol(dp), k=201, step=k %/% 2){
+    dp.s <- apply(dp, 1, runmed, k=k)
+    i <- seq(1, length(x), step)
+    df <- data.frame(x[i], dp.s[i,])
+    colnames(df) <- c("i", paste0("s.", 1:ncol(dp.s)))
+    df
+}
+
+hist.bnd <- function(x, p=c(0, 0.99), bnd=quantile(x, probs=p, na.rm=TRUE), bn=100, ...){
+    x <- x[ x >= bnd[1] & x < bnd[2] ]
+    hist(x, breaks=seq(bnd[1], bnd[2], length.out=bn, ...))
+}
+
+## this is not terribly fast, but..
+sup.6.kd.s <- smooth.subset(sup.6.kd)
+
+
+layout(cbind(1:3, 4:6), widths=c(0.8, 0.2))
+lcol <- rgb(0,0,0,1)
+vcol <- rgb(0,0,1,0.1)
+with(sup.6.kd.s, plot(i, log2(1 + s.1), type='l', col=lcol))
+abline( v=which( sup.6.kd[1,] == 0 ), col=vcol)
+
+with(sup.6.kd.s, plot(i, log2(1 + s.2), type='l', col=lcol))
+with(sup.6.kd.s, {
+    m <- median(log2(s.1/s.2), na.rm=TRUE)
+    plot(i, log2(s.1/s.2) - m, type='l', col=lcol)
+    abline(h=0, col='red')
+})
+with(sup.6.kd.s, plot(sort(log2(1+s.1)), type='l'))
+with(sup.6.kd.s, plot(sort(log2(1+s.2)), type='l'))
+
+## here we actually get a nice antimode between the two peaks.. 
+hist.bnd(sup.6.kd[1,], bnd=c(0, 100))
+
+with(sup.6.kd.s, {b <- hist(s.1, breaks=c(0, quantile(s.1, probs=(0.99), na.rm=TRUE))))
+with(sup.6.kd.s, hist(s.2, breaks=100))
+with(sup.6.kd.s, hist(log2(s.1/s.2), breaks=100))
+
+
+## test the combined spectrum
+max.seq <- -1
+t1.1 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R1.fastq", c(21, 21, 10, 47, max.seq, 200, 4, 0), NULL)
+)
+##
+t1.2 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("breiflabb_hiseq_qtrimmed_nophix_R2.fastq", c(21, 21, 10, 47, max.seq, 200, 4, 0), ptr)
+)
+
+##
+t2 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("fLopPis1.1.hap1.fa", c(21, 21, 10, 47, -1, 200, 3, 1), ptr)
+)
+##
+t3 <- system.time(
+    ptr <- count.kmers.fq.sh.rp("fLopPis1.1.hap2.fa", c(21, 21, 10, 47, -1, 200, 3, 2), ptr)
+)
+
+## This is for 
+
+t4 <- system.time(
+    ptr.o <- count.kmers.fq.sh.rp("calls_2025-07-15_T11-24-30.fq.gz", c(21, 21, 10, 47, -1, 200, 3, 2), NULL)
+)
+
+spec <- kmer.spec.sh.n(ptr.o, 100, 4, 1, c(1,1,1))
+
+
+### and then try to get spectra from specific intersects of these:
+comb <- c(1:7, 6)
+comb.inner <- c(rep(1, 7), 0)
+max.count <- 300
+source.min <- rep(1, 3)
+
+spec <- kmer.spec.sh.n(ptr, max.count, comb, comb.inner, source.min)
+
+for(i in 1:length(comb) - 1){
+    b <- i * 3
+    par(mfrow=c(3,1))
+    for(j in 1:3){
+        plot(spec[b+j,], type='l', main=comb[i+1], col=j)
+    }
+    inpt <- readline("next: ")
+}
+
+cs <- c(1,3,5,7)
+cs.ri <- 1 + (cs - 1) * 3
+
+par(mfrow=c(2,1))
+d <- 0:max.count ## the depth;
+d.i <- d+1
+plot(d[d.i], spec[cs.ri[1], d.i], type='n', ylim=range(spec[cs.ri[-1], 1:200]))
+for(i in seq_along(cs.ri))
+    lines( d[d.i], spec[cs.ri[i], d.i], col=i, lwd=2)
+abline(h=1e6)
+
+plot(d[d.i], spec[cs.ri[1], d.i], type='l', ylim=range(spec[cs.ri[-1], 1:200]))
+y <- rep(0, length(d.i))
+x <- c(d[d.i], rev(d[d.i]))
+for(i in seq_along(cs.ri)){
+    y2 <- y + spec[cs.ri[i],d.i]
+    polygon(x, c(y2, rev(y)), col=i)
+##    lines( d[d.i], y, col=i, lwd=2)
+    y <- y2
+}
+abline(h=2e6)
+
+
+with(sup.6.kd.s, abline(h=median(log2(s.1/s.2), na.rm=TRUE), col='red'))
+abline( h=median(
 
 ptr.1 <- make.kmer.hash(seq, 10, do.sort=FALSE)
 ptr.2 <- make.kmer.hash(seq.rc, 10, do.sort=FALSE)

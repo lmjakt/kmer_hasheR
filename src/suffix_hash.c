@@ -210,9 +210,24 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
   int ret;
   void *hash_p = sh->prefixes[prefix_i];
   uint32_t count = 0;
+  // NOTE: the following declarations were previously done within the switch
+  //       statements. That compiled with a later version of gcc (15.2.1), but not
+  //       version 9.4.9 which gave the following error:
+  //       
+  //       "a label can only be part of a statement and a declaration is not a statement"
+  //       I suspect that we might be able to just use a void pointer instead as we anyway end up
+  //       casting the pointer. But using these variables may reduce the number of casts in the
+  //       the code.
+  // Note that I have had to do the same for sh_kmer_count_n
+  // One way of avoiding this may be to use a union within the suffix_hash_n struct
+  // Consider how this can be implemented at a later stage.
+  khash_t(kcount) *hash;
+  khash_t(kcount_2) *hash_2;
+  khash_t(kcount_3) *hash_3;
+  khash_t(kcount_4) *hash_4;
   switch(sh->counts_n){
   case 1:
-    khash_t(kcount) *hash = (khash_t(kcount)*)hash_p;
+    hash = (khash_t(kcount)*)hash_p;
     k = kh_get(kcount, hash, suffix);
     if(k == kh_end(hash) || !kh_exist(hash, k)){
       k = kh_put(kcount, hash, suffix, &ret);
@@ -223,7 +238,7 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
     count = kh_value(hash, k);
     break;
   case 2:
-    khash_t(kcount_2) *hash_2 = (khash_t(kcount_2)*)hash_p;
+    hash_2 = (khash_t(kcount_2)*)hash_p;
     k = kh_get(kcount_2, hash_2, suffix);
     if(k == kh_end(hash_2) || !kh_exist(hash_2, k)){
       k = kh_put(kcount_2, hash_2, suffix, &ret);
@@ -235,7 +250,7 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
     count = kh_value(hash_2, k).n[source];
     break;
   case 3:
-    khash_t(kcount_3) *hash_3 = (khash_t(kcount_3)*)hash_p;
+    hash_3 = (khash_t(kcount_3)*)hash_p;
     k = kh_get(kcount_3, hash_3, suffix);
     if(k == kh_end(hash_3) || !kh_exist(hash_3, k)){
       k = kh_put(kcount_3, hash_3, suffix, &ret);
@@ -247,7 +262,7 @@ int sh_n_add_kmer(suffix_hash_n *sh, uint32_t source, uint64_t kmer){
     count = kh_value(hash_3, k).n[source];
     break;
   case 4:
-    khash_t(kcount_4) *hash_4 = (khash_t(kcount_4)*)hash_p;
+    hash_4 = (khash_t(kcount_4)*)hash_p;
     k = kh_get(kcount_4, hash_4, suffix);
     if(k == kh_end(hash_4) || !kh_exist(hash_4, k)){
       k = kh_put(kcount_4, hash_4, suffix, &ret);
@@ -276,27 +291,31 @@ int sh_kmer_count_n(suffix_hash_n *sh, uint64_t kmer, int *counts){
   khiter_t k;
   uint32_t *sh_count_ptr = 0;
   void *hash_p = sh->prefixes[p_i];
+  khash_t(kcount) *hash;
+  khash_t(kcount_2) *hash_2;
+  khash_t(kcount_3) *hash_3;
+  khash_t(kcount_4) *hash_4;
   switch(sh->counts_n){
   case 1:
-    khash_t(kcount) *hash = (khash_t(kcount)*)hash_p;
+    hash = (khash_t(kcount)*)hash_p;
     k = kh_get(kcount, hash, suffix);
     if(k != kh_end(hash) && kh_exist(hash, k))
       sh_count_ptr = &kh_value(hash, k);
     break;
   case 2:
-    khash_t(kcount_2) *hash_2 = (khash_t(kcount_2)*)hash_p;
+    hash_2 = (khash_t(kcount_2)*)hash_p;
     k = kh_get(kcount_2, hash_2, suffix);
     if(k != kh_end(hash_2) && kh_exist(hash_2, k))
       sh_count_ptr = (uint32_t*)&(kh_value(hash_2, k).n);
     break;
   case 3:
-    khash_t(kcount_3) *hash_3 = (khash_t(kcount_3)*)hash_p;
+    hash_3 = (khash_t(kcount_3)*)hash_p;
     k = kh_get(kcount_3, hash_3, suffix);
     if(k != kh_end(hash_3) && kh_exist(hash_3, k))
       sh_count_ptr = (uint32_t*)&kh_value(hash_3, k).n;
     break;
   case 4:
-    khash_t(kcount_4) *hash_4 = (khash_t(kcount_4)*)hash_p;
+    hash_4 = (khash_t(kcount_4)*)hash_p;
     k = kh_get(kcount_4, hash_4, suffix);
     if(k != kh_end(hash_4) && kh_exist(hash_4, k))
       sh_count_ptr =  (uint32_t*)&kh_value(hash_4, k).n;
@@ -313,21 +332,98 @@ int sh_kmer_count_n(suffix_hash_n *sh, uint64_t kmer, int *counts){
 }
 
 
-size_t sh_count_spectrum_nc(suffix_hash_n *sh, double *counts, int max_count,
-			    uint32_t *comb, int comb_n, uint32_t flag){
-  return(0);
+int sh_count_spectrum_nc(suffix_hash_n *sh, double *counts, uint32_t counts_l, uint32_t max_count,
+			 uint32_t *comb, uint32_t *comb_inner, uint32_t comb_n, uint32_t *source_min){
+  // check the reported length of counts_l (this is not foolproof, but may catch some errors)
+  if(counts_l != (max_count + 1) * sh->counts_n * comb_n)
+    return(-1);
+  // all values of comb_min should be larger than 0. comb_inner should be 0 or 1
+  // all values of comb should be less than 2^(sh->counts_n).
+  for(uint32_t i=0; i < comb_n; ++i){
+    if(comb_inner[i] < 0 || comb_inner[i] > 1)
+      return(-3);
+    if(comb[i] >= (1 << (sh->counts_n)))
+      return(-4);
+  }
+  // I initially tried to use the common structure of the khash struct
+  // to avoid repeating code for the different types. However, doing this
+  // correctly will depend on things like how the values are packed within the
+  // struct and that might change with compilers and compiler settings. Hence
+  // back to using ugly switch statements.
+  khash_t(kcount) *hash;
+  khash_t(kcount_2) *hash_2;
+  khash_t(kcount_3) *hash_3;
+  khash_t(kcount_4) *hash_4;
+
+  for(size_t i=0; i < sh->prefix_n; ++i){
+    if(!sh->prefixes[i])
+      continue;
+    // use lower level functions to obtain a pointer to the values
+    // for this we can pretend that all the hashes are the same..
+    khint_t n_buckets;
+    khiter_t kit;
+    switch(sh->counts_n){
+    case 1:
+      n_buckets = ((khash_t(kcount)*)sh->prefixes[i])->n_buckets;
+      break;
+    case 2:
+      n_buckets = ((khash_t(kcount_2)*)sh->prefixes[i])->n_buckets;
+      break;
+    case 3:
+      n_buckets = ((khash_t(kcount_3)*)sh->prefixes[i])->n_buckets;
+      break;
+    case 4:
+      n_buckets = ((khash_t(kcount_4)*)sh->prefixes[i])->n_buckets;
+      break;
+    default:
+      return(-5);
+    }
+    uint32_t *val = 0;
+    for(kit=0; kit < n_buckets; ++kit){
+      switch(sh->counts_n){
+      case 1:
+	hash = (khash_t(kcount)*)sh->prefixes[i];
+	val = kh_exist(hash, kit) ? &kh_value(hash, kit) : 0;
+	break;
+      case 2:
+	hash_2 = (khash_t(kcount_2)*)sh->prefixes[i];
+	val = (uint32_t*)(kh_exist(hash_2, kit) ? &kh_value(hash_2, kit) : 0);
+	break;
+      case 3:
+	hash_3 = (khash_t(kcount_3)*)sh->prefixes[i];
+	val = (uint32_t*)(kh_exist(hash_3, kit) ? &kh_value(hash_3, kit) : 0);
+	break;
+      case 4:
+	hash_4 = (khash_t(kcount_4)*)sh->prefixes[i];
+	val = (uint32_t*)(kh_exist(hash_4, kit) ? &kh_value(hash_4, kit) : 0);
+	break;
+      default:
+	return(-5);
+      }
+      if(!val)
+	continue;
+      uint32_t val_flag = 0;
+      for(uint32_t j=0; j < sh->counts_n; ++j){
+	val_flag |= ( (val[j] >= source_min[j]) << j );
+      }
+      // then go through each set of combinations and decide which
+      // conditions are specified:
+      for(uint32_t jj=0; jj < comb_n; ++jj){
+	if((comb_inner[jj] && (val_flag == comb[jj])) ||
+	   ((!comb_inner[jj]) && (val_flag & comb[jj]) > 0)){
+	  // increment the appropriate counts appropriately:
+	  for(uint32_t k=0; k < sh->counts_n; ++k){
+	    uint32_t count = val[k] < max_count ? val[k] : max_count;
+	    counts[ count * (comb_n * sh->counts_n) + (jj * sh->counts_n) + k ]++;
+	  }
+	}
+      }
+    }
+  }
+  // consider returning a more informative number.. 
+  return(1);
 }
 
-
-/* void *sh_intersect_thread( void* args ){ */
-/*   return(args); */
-/* } */
-
-/* suffix_hash_2 sh_intersect(suffix_hash *sh1, suffix_hash *sh2, uint32_t thread_n){ */
-/*   suffix_hash_2 sh_pair; */
-/*   // init and do something */
-/*   return(sh_pair); */
-/* } */
 
 
 // NOTE: This approach of multithreading did not work well;

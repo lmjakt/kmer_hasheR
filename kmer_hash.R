@@ -37,6 +37,12 @@ count.kmers.fq.sh <- function(fq.file, params, hash.ptr=NULL){
 
 ## params:
 ## k, prefix_bits, min_q, thread_n, max_reads, max_mem, source_n, source
+## NOTE: the prefix_bits does not seem to matter very much to timing, but
+##       larger prefix_bits seem to take more memory.
+##       Note that it seems to me that a khash_t can only have up to
+##       2^32 buckets; it's thus possible that suffix_bits > 32
+##       could cause crashes. This may also explain why an initial experiment
+##       using a straight khash_t( uint64_t ) failed to complete (seem to hang).
 count.kmers.fq.sh.rp <- function(fq.file, params, hash.ptr=NULL){
     params <- as.integer(params)
     .Call("count_kmers_fastq_sh_rp", hash.ptr, params, fq.file);
@@ -55,6 +61,10 @@ kmer.spec.sh <- function(ptr, max.count){
     .Call("kmer_spectrum_suffix_hash", ptr, as.integer(max.count))
 }
 
+kmer.spec.sh.n <- function(ptr, max.count, comb, comb.inner, source.min){
+    .Call("kmer_spectrum_suffix_hash_n", ptr, as.integer(max.count),
+          as.integer(comb), as.integer(comb.inner), as.integer(source.min))
+}
 
 kmer.pos <- function(ex.ptr, opt.flag){
     tmp <- .Call("kmer_positions", ex.ptr, as.integer(opt.flag))

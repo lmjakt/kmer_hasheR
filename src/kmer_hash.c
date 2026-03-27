@@ -1007,6 +1007,35 @@ SEXP kmer_spectrum_suffix_hash(SEXP ext_ptr, SEXP max_count_r){
   return(counts_r);
 }
 
+SEXP kmer_spectrum_suffix_hash_n(SEXP hash_ptr_r, SEXP max_count_r, SEXP comb_r, SEXP comb_inner_r,
+				 SEXP source_min_r){
+  suffix_hash_n *sh = extract_ext_ptr(hash_ptr_r, suffix_hash_n_tag);
+  if(!sh)
+    error("unable to obtain suffix_hash_n from external pointer");
+  if(TYPEOF(max_count_r) != INTSXP || length(max_count_r) != 1)
+    error("max_count_r should be a single integer");
+  if(TYPEOF(comb_r) != INTSXP || length(comb_r) < 1)
+    error("comb_r should be an integer vector of length > 0");
+  if(TYPEOF(comb_inner_r) != INTSXP || length(comb_inner_r) != length(comb_r))
+    error("comb_inner_r should be an integer vector of the same length as comb_r");
+  if(TYPEOF(source_min_r) != INTSXP || length(source_min_r) != sh->counts_n)
+    error("source_min_r should be an integer vector of length sh->counts_n");
+  uint32_t max_count = (uint32_t)asInteger(max_count_r);
+  uint32_t comb_n = length(comb_r);
+  uint32_t *comb = (uint32_t*)INTEGER(comb_r);
+  uint32_t *comb_inner = (uint32_t*)INTEGER(comb_inner_r);
+  uint32_t *source_min = (uint32_t*)INTEGER(source_min_r);
+  uint32_t counts_l = max_count + 1;
+  SEXP counts_r = PROTECT( allocMatrix(REALSXP, comb_n * sh->counts_n, counts_l) );
+  double *counts = REAL(counts_r);
+  memset( counts, 0, sizeof(double) * comb_n * sh->counts_n * counts_l );
+  int ret = sh_count_spectrum_nc(sh, counts, comb_n * sh->counts_n * counts_l,
+				 max_count, comb, comb_inner, comb_n, source_min);
+  if(ret < 0)
+    Rprintf("sh_count_spectrum_nc returned an error: %d\n", ret);
+  UNPROTECT(1);
+  return(counts_r);
+}
 
 // To count kmers from fastq files I can use kseq.h
 // this allows me to read one sequence at a time from compressed fastq / fasta files
@@ -1157,6 +1186,7 @@ static const R_CallMethodDef callMethods[] = {
 	      {"seq_kmer_depth_sh", (DL_FUNC)&seq_kmer_depth_sh, 3},
 	      {"kmer_spectrum_ktree", (DL_FUNC)&kmer_spectrum_ktree, 2},
 	      {"kmer_spectrum_suffix_hash", (DL_FUNC)&kmer_spectrum_suffix_hash, 2},
+	      {"kmer_spectrum_suffix_hash_n", (DL_FUNC)&kmer_spectrum_suffix_hash_n, 5},
 	      {"kmer_positions", (DL_FUNC)&kmer_positions, 2},
 	      {"kmer_pair_pos", (DL_FUNC)&kmer_pair_pos, 2},
 	      {NULL, NULL, 0}
