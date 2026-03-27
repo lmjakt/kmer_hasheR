@@ -49,6 +49,15 @@ int kmer_h_insert(uint64_t kmer, int pos, khash_t(kmer_h) *hash){
   return(new_kmer);
 }
 
+// Returns 0 if kmer does not exit in hash. Otherwise it returns a pointer
+// to the kmer_pos_t structure holding the data in the hash. Note that this
+// must be used immediately and should not be freed
+kmer_pos_t *kmer_pos(khash_t(kmer_h) *hash, uint64_t kmer){
+  khiter_t k = kh_get(kmer_h, hash, kmer);
+  if(k == kh_end(hash) || !kh_exist(hash, k))
+    return(0);
+  return( &kh_val(hash, k) );
+}
 
 // returns the total number of kmers encountered
 // seq: ascii encoded sequence
@@ -86,4 +95,42 @@ int seq_to_hash(const char *seq, int k, khash_t(kmer_h) *hash){
     }
   }
   return(word_count);
+}
+
+// this is a utility function. It simply extends a kvec(int) with alternating values
+void pair_positions_push(kmer_pos_t *source, kmer_ppos *dest, int dest_pos){
+  if(!source)
+    return;
+  for(size_t i=0; i < source->v.n; ++i){
+    kv_push(int, *dest, dest_pos);
+    kv_push(int, *dest, source->v.a[i] );
+  }
+}
+
+kmer_ppos seq_kmer_positions(khash_t(kmer_h) *hash, const char *seq, int k){
+  kmer_ppos pair_positions;
+  kv_init(pair_positions);
+  // we should consider having an iterator function for going across sequences.
+  // but for now I'm just copying the one I have above. I think I might have one
+  // somewhere, but, just try things first..
+  int i = 0;
+  uint64_t offset = 0;
+  uint64_t one = 1;
+  uint64_t zero = 0;
+  uint64_t mask = k < 32 ? (one << (2*k)) - 1 : ~zero;
+  while(seq[i]){
+    // pass any potential Ns
+    i = init_kmer(seq, i, &offset, k);
+    if(!seq[i])
+      break;
+    kmer_pos_t *kpos = kmer_pos(hash, offset & mask);
+    pair_positions_push( kpos, &pair_positions, i );
+    while(seq[i] && LC(seq[i]) != 'n'){
+      offset = UPDATE_OFFSET(offset, seq[i]);
+      ++i;
+      kmer_pos_t *kpos = kmer_pos(hash, offset & mask);
+      pair_positions_push( kpos, &pair_positions, i );
+    }
+  }
+  return(pair_positions);
 }

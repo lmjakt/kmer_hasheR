@@ -1,4 +1,5 @@
 source("kmer_hash.R")
+require("Biostrings")
 
 ## no Biostrings package. and on the plane!
 read.fasta <- function(fn){
@@ -33,6 +34,48 @@ rev.comp <- function(seq){
     seq.2b <- lapply(seq.2b, function(x){ rev((x + 2) %% 4) })
     sapply(seq.2b, function(x){ paste(nucs[1+x], collapse="") })
 }
+
+### do a dotplot for ribosomal clusters:
+rib.seq <- readDNAStringSet( "S18_28_clusters.fa" )
+
+hash <- make.kmer.hash(rib.seq["H1_SUPER_22_21408713-21660302"], 16)
+ppos <- seq.kmer.pos( hash, rib.seq["H1_SUPER_22_21408713-21660302"], 16)
+ppos2 <- seq.kmer.pos( hash, reverseComplement(rib.seq["H1_SUPER_22_21408713-21660302"]), 16)
+
+plot(ppos[,1], ppos[,2], pch=15, cex=0.2, col=rgb(0,0,0,0.2))
+plot(ppos2[,1], ppos2[,2], pch=15, cex=0.2)
+
+
+ppos3 <- seq.kmer.pos( hash, rib.seq["H1_Scaffold_199_1-215532"], 21 )
+ppos4 <- seq.kmer.pos( hash, reverseComplement( rib.seq["H1_Scaffold_199_1-215532"] ), 21 )
+ppos5 <- seq.kmer.pos( hash, rib.seq["H1_Scaffold_203_1-156989"], 21 )
+ppos6 <- seq.kmer.pos( hash, reverseComplement( rib.seq["H1_Scaffold_203_1-156989"] ), 21 )
+
+ppos7 <- seq.kmer.pos( hash, rib.seq["H1_Scaffold_212_1-215201"], 21 )
+ppos8 <- seq.kmer.pos( hash, rib.seq["H2_Scaffold_198_1-234467"], 21 )
+
+kpos <- kmer.pos(hash, (1+2+4+8))
+
+
+plot(ppos4[,1], ppos4[,2], pch=15, cex=0.2)
+plot(ppos6[,1], ppos6[,2], pch=15, cex=0.2)
+
+plot(ppos7[,1], ppos7[,2], pch=15, cex=0.2)
+plot(ppos8[,1], ppos8[,2], pch=15, cex=0.2)
+
+hash.2 <- make.kmer.hash(rib.seq["H1_Scaffold_212_1-315201"], 31)
+ppos9 <- seq.kmer.pos(hash.2, rib.seq["H2_Scaffold_198_1-234467"], 31)
+plot(ppos9[,1], ppos9[,2], pch=15, cex=0.2)
+
+hash.3 <- make.kmer.hash(rib.seq["H1_Scaffold_212_1-315201"], 21)
+ppos10 <- seq.kmer.pos(hash.3, rib.seq["H2_Scaffold_198_1-234467"], 21)
+ppos11 <- seq.kmer.pos(hash.3, rib.seq["H1_Scaffold_212_1-315201"], 21)
+ppos12 <- seq.kmer.pos(hash.3, reverseComplement( rib.seq["H1_Scaffold_212_1-315201"]), 21)
+plot(ppos10[,1], ppos10[,2], pch=15, cex=0.2)
+plot(ppos11[,1], ppos11[,2], pch=15, cex=0.2)
+plot(ppos12[,1], ppos12[,2], pch=15, cex=0.2)
+
+
 
 seq <- read.fasta("test.fa")
 seq.rc <- rev.comp(seq)

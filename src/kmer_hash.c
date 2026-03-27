@@ -1146,6 +1146,31 @@ SEXP kmer_positions(SEXP ptr_r, SEXP opt_flag_r){
   return(ret_data);
 }
 
+// go through sequence in seq_r and find positions in the
+// kmer_hash given in ptr_r
+SEXP sequence_kmer_positions(SEXP ptr_r, SEXP seq_r, SEXP k_r){
+  khash_ptr *h_ptr = extract_khash_ptr(ptr_r);
+  // we have to trust this pointer; We could consider making it's
+  // first element a magic number, but not much point as that
+  // is what we try to do in the tag.
+  // accept a single sequence only:
+  if(TYPEOF(seq_r) != STRSXP || length(seq_r) != 1)
+    error("seq_r should be a single sequence");
+  if(TYPEOF(k_r) != INTSXP || length(k_r) != 1)
+    error("k should be an integer of length 1");
+  int k = INTEGER(k_r)[0];
+  SEXP seq_rr = STRING_ELT(seq_r, 0);
+  if(length(seq_rr) <= k || k > 31)
+    error("the sequence should be longer than k and k should not be longer than 31");
+  const char *seq = CHAR(seq_rr);
+  kmer_ppos pos = seq_kmer_positions(h_ptr->hash, seq, k);
+  SEXP ret_value = PROTECT(allocMatrix(INTSXP, 2, pos.n/2));
+  memcpy( INTEGER(ret_value), pos.a, pos.n * sizeof(int) );
+  kv_destroy(pos);
+  UNPROTECT(1);
+  return(ret_value);
+}
+
 SEXP kmer_pair_pos(SEXP ptr_a, SEXP ptr_b){
   khash_ptr *a = extract_khash_ptr(ptr_a);
   khash_ptr *b = extract_khash_ptr(ptr_b);
@@ -1188,6 +1213,7 @@ static const R_CallMethodDef callMethods[] = {
 	      {"kmer_spectrum_suffix_hash", (DL_FUNC)&kmer_spectrum_suffix_hash, 2},
 	      {"kmer_spectrum_suffix_hash_n", (DL_FUNC)&kmer_spectrum_suffix_hash_n, 5},
 	      {"kmer_positions", (DL_FUNC)&kmer_positions, 2},
+	      {"sequence_kmer_positions", (DL_FUNC)&sequence_kmer_positions, 3},
 	      {"kmer_pair_pos", (DL_FUNC)&kmer_pair_pos, 2},
 	      {NULL, NULL, 0}
 };

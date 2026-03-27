@@ -11,7 +11,7 @@ to create classical dot plots over large regions.
 The functions are currently limited to values of k up to 32 due to the
 hashing of 64 bit integers representing two bit encoded sequences.
 Regions containing N's are excluded; regions containing ambiguity codes
-will be incorrectly handled the hashing function only checks for
+will be incorrectly handled since the hashing function only checks for
 "N" and assumes any non-N characters are from the set of A, C, T, G
 (lower or upper case).
 
@@ -84,7 +84,7 @@ Returns a named `R` `list` object containing the following elements:
    resulted more than $9\times10^9$ pairs[^mem]. Attempting to obtain such tables
    will result in an error, but does not seem to crash the `R` session. It seems
    likely that such errors will also result in a memory leak as the error
-   will be raised when attempting to allocate memory `R` for the `R` matrix
+   will be raised when attempting to allocate memory for the `R` matrix
    and will not provide any opportunity for freeing memory allocated for the
    positions.
       
@@ -102,6 +102,32 @@ Each of the elements may be `NULL` depending on the value of `opt.flag`.
 	- 2: Return k-mer positions.
 	- 4: Return pair positions.
 	- 8: Return counts.
+
+## `seq.kmer.pos(ex.ptr, seq, k)`
+
+Given an arbitrary sequence (`seq`) it will return the positions in
+the index (`ex.ptr`) of the kmers found in `seq`. This can thus be
+used to perform a dotplot of two different sequences. The function
+returns a matrix with two columns (`i`, `j`); `i` gives the positions of
+kmers in `seq`; `j` gives the positions in the index. Both `i` and `j`
+may repeat.
+
+
+## Lots of kmer counting related stuff
+
+In addition to these indexing functions there are also a large number of
+functions that count k-mers. Most of these functions should be removed
+and those remaining could do with some rewriting. Those functions were
+written to allow the counting of kmers in raw reads which is much more
+computationally expensive due to the diversity of k-mers found (mostly
+due to sequencing errors), and I experimented with a large number of
+ways of multithreading. The final implementation scales reasonably well
+and runs about 10% slower than Meryl; but is able to use much more memory
+by only counting high quality k-mers.
+
+I have not yet documented any of these functions as the code is very messy,
+needs cleaning up and would benefit from renaming many of the functions.
+Unfortunately I have not had sufficient time to do this.
 
 # Performance, limitations and future
 

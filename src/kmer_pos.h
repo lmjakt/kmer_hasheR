@@ -26,6 +26,10 @@
 // kvec_t(int)
 // the flag value can be set by functions in order to
 // mark k-mers that should be treated differently.
+// 
+// NOTE: it shouldn't be necessary to keep the kmer in kmer_pos_t itself as
+// it will be kept as part of the hash structure.
+// 
 typedef struct {
   kvec_t(int) v;
   uint64_t kmer;
@@ -34,6 +38,7 @@ typedef struct {
 
 KHASH_MAP_INIT_INT64(kmer_h, kmer_pos_t)
 
+typedef kvec_t(int) kmer_ppos;
 
 typedef struct {
   khash_t(kmer_h) *hash;
@@ -42,10 +47,21 @@ typedef struct {
   int sorted;
 } khash_ptr;
 
+
 void clear_kmer_h(khash_t(kmer_h) *hash);
 
 void sort_kmer_pos(khash_ptr *hash_ptr);
 
+/// Returns the position associated with a kmer
+kmer_pos_t *kmer_pos(khash_t(kmer_h) *hash, uint64_t kmer);
+
+/// goes through the sequence and reports the positions of each kmer
+/// in the hash.
+/// These are returned as alternating positions in seq and i in a single
+/// array of integers.
+kmer_ppos seq_kmer_positions(khash_t(kmer_h) *hash, const char *seq, int k);
+
+// Inserts positions into an existing hash
 int seq_to_hash(const char *seq, int k, khash_t(kmer_h) *hash);
 
 #endif

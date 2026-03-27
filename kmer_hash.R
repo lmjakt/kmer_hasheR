@@ -7,6 +7,35 @@ make.kmer.hash <- function(seq, k, do.sort=FALSE){
           as.integer(k), as.integer(do.sort))
 }
 
+kmer.pos <- function(ex.ptr, opt.flag){
+    tmp <- .Call("kmer_positions", ex.ptr, as.integer(opt.flag))
+    if(!is.null(tmp$pos)){
+        tmp$pos <- t(tmp$pos)
+        colnames(tmp$pos) <- c("i", "pos")
+    }
+    if(!is.null(tmp$pair.pos)){
+        tmp$pair.pos <- t(tmp$pair.pos)
+        colnames(tmp$pair.pos) <- c("i", "x", "y")
+    }
+    tmp
+}
+
+seq.kmer.pos <- function(ex.ptr, seq, k){
+    tmp <- .Call("sequence_kmer_positions", ex.ptr,
+                 as.character(seq), as.integer(k))
+    rownames(tmp) <- c("i", "j")
+    t(tmp)
+}
+
+kmer.pairs <- function(ptr.a, ptr.b){
+    tmp <- t(.Call("kmer_pair_pos", ptr.a, ptr.b))
+    colnames(tmp) <- c("a", "b")
+    tmp
+}
+
+#### The functions following these relate to the counting of k-mers
+#### without indexing the positions.
+
 ## hash.ptr: a suitable pointer to a hash object..
 ## params: k, source, source.no
 ## seq: nucleotide sequences
@@ -66,21 +95,3 @@ kmer.spec.sh.n <- function(ptr, max.count, comb, comb.inner, source.min){
           as.integer(comb), as.integer(comb.inner), as.integer(source.min))
 }
 
-kmer.pos <- function(ex.ptr, opt.flag){
-    tmp <- .Call("kmer_positions", ex.ptr, as.integer(opt.flag))
-    if(!is.null(tmp$pos)){
-        tmp$pos <- t(tmp$pos)
-        colnames(tmp$pos) <- c("i", "pos")
-    }
-    if(!is.null(tmp$pair.pos)){
-        tmp$pair.pos <- t(tmp$pair.pos)
-        colnames(tmp$pair.pos) <- c("i", "x", "y")
-    }
-    tmp
-}
-
-kmer.pairs <- function(ptr.a, ptr.b){
-    tmp <- t(.Call("kmer_pair_pos", ptr.a, ptr.b))
-    colnames(tmp) <- c("a", "b")
-    tmp
-}
